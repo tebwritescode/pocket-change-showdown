@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if is_edit else 'Add' }} Expense - PCS Tracker{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="fas {{ 'fa-edit' if is_edit else 'fa-plus-circle' }}"></i> 
+                        {{ 'Edit' if is_edit else 'Add New' }} Expense
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        {{ form.csrf_token }}
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="title" class="form-label">
+                                    <i class="fas fa-heading"></i> Title
+                                </label>
+                                {{ form.title(class="form-control", placeholder="e.g., Moving Truck Rental") }}
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="date" class="form-label">
+                                    <i class="fas fa-calendar"></i> Date
+                                </label>
+                                {{ form.date(class="form-control") }}
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="category_id" class="form-label">
+                                    <i class="fas fa-tag"></i> Category
+                                </label>
+                                {{ form.category_id(class="form-select") }}
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="cost" class="form-label">
+                                    <i class="fas fa-dollar-sign"></i> Cost
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    {{ form.cost(class="form-control", placeholder="0.00", step="0.01") }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="payment_method_id" class="form-label">
+                                    <i class="fas fa-credit-card"></i> Payment Method
+                                </label>
+                                {{ form.payment_method_id(class="form-select") }}
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="vendor" class="form-label">
+                                    <i class="fas fa-store"></i> Vendor
+                                </label>
+                                {{ form.vendor(class="form-control", placeholder="e.g., U-Haul") }}
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="description" class="form-label">
+                                <i class="fas fa-align-left"></i> Description
+                            </label>
+                            {{ form.description(class="form-control", rows="3", placeholder="Add any details about this expense...") }}
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="location" class="form-label">
+                                    <i class="fas fa-map-marker-alt"></i> Location
+                                </label>
+                                {{ form.location(class="form-control", placeholder="e.g., Downtown Office") }}
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="tags" class="form-label">
+                                    <i class="fas fa-tags"></i> Tags
+                                </label>
+                                {{ form.tags(class="form-control", placeholder="e.g., moving, essential, reimbursable") }}
+                                <small class="form-text text-muted">Separate tags with commas</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="notes" class="form-label">
+                                <i class="fas fa-sticky-note"></i> Additional Notes
+                            </label>
+                            {{ form.notes(class="form-control", rows="2", placeholder="Any additional information...") }}
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label for="receipt" class="form-label">
+                                <i class="fas fa-camera"></i> Receipt/Screenshot
+                            </label>
+                            {{ form.receipt(class="form-control", accept="image/*,application/pdf") }}
+                            <small class="form-text text-muted">
+                                Accepted formats: PNG, JPG, JPEG, GIF, PDF, WEBP (Max 16MB)
+                            </small>
+                            
+                            {% if is_edit and expense and expense.receipt_image %}
+                            <div class="mt-2">
+                                <span class="badge bg-success">
+                                    <i class="fas fa-check-circle"></i> Receipt attached
+                                </span>
+                                <a href="{{ url_for('view_receipt', id=expense.id) }}" target="_blank" class="btn btn-sm btn-outline-info ms-2">
+                                    <i class="fas fa-eye"></i> View Current Receipt
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div id="receiptPreview" class="mb-3" style="display: none;">
+                            <h6>Receipt Preview:</h6>
+                            <img id="previewImage" src="" class="img-thumbnail" style="max-width: 300px;">
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('expenses') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> {{ 'Update' if is_edit else 'Save' }} Expense
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="fas fa-info-circle"></i> Tips</h6>
+                    <ul class="mb-0">
+                        <li>Take clear photos of receipts immediately after purchase</li>
+                        <li>Include vendor name and location for better tracking</li>
+                        <li>Use tags to group related expenses</li>
+                        <li>Add notes for reimbursement details or special circumstances</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Receipt preview
+    const receiptInput = document.getElementById('receipt');
+    const previewDiv = document.getElementById('receiptPreview');
+    const previewImage = document.getElementById('previewImage');
+    
+    if (receiptInput) {
+        receiptInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    previewDiv.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                previewDiv.style.display = 'none';
+            }
+        });
+    }
+    
+    // Auto-format cost field
+    const costInput = document.getElementById('cost');
+    if (costInput) {
+        costInput.addEventListener('blur', function() {
+            if (this.value) {
+                this.value = parseFloat(this.value).toFixed(2);
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

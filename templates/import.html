@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Import CSV - PCS Tracker{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0"><i class="fas fa-file-import"></i> Import Expenses from CSV</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        
+                        <div class="mb-4">
+                            <label for="file" class="form-label">Select CSV File</label>
+                            <input type="file" name="file" class="form-control" accept=".csv" required>
+                            <small class="form-text text-muted">Maximum file size: 16MB</small>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('expenses') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-upload"></i> Import
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> CSV Format Requirements</h5>
+                </div>
+                <div class="card-body">
+                    <p>Your CSV file should include the following columns:</p>
+                    <ul>
+                        <li><strong>Date</strong> - Format: YYYY-MM-DD or MM/DD/YYYY</li>
+                        <li><strong>Title</strong> - Name of the expense</li>
+                        <li><strong>Description</strong> - Detailed description (optional)</li>
+                        <li><strong>Category</strong> - Must match existing categories</li>
+                        <li><strong>Cost</strong> - Numeric value (e.g., 99.99)</li>
+                        <li><strong>Payment Method</strong> - Must match existing payment methods</li>
+                        <li><strong>Location</strong> - Where the expense occurred (optional)</li>
+                        <li><strong>Vendor</strong> - Vendor or merchant name (optional)</li>
+                        <li><strong>Notes</strong> - Additional notes (optional)</li>
+                        <li><strong>Tags</strong> - Comma-separated tags (optional)</li>
+                    </ul>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-lightbulb"></i> <strong>Tip:</strong> 
+                        <a href="{{ url_for('download_template') }}" class="alert-link">Download our template</a> 
+                        to ensure your CSV is properly formatted.
+                    </div>
+                    
+                    <h6 class="mt-3">Example CSV Content:</h6>
+                    <div class="bg-light p-3 rounded">
+                        <code>
+                            Date,Title,Description,Category,Cost,Payment Method,Location,Vendor,Notes,Tags<br>
+                            2024-01-15,Moving Truck,U-Haul rental,Moving,299.99,Credit Card,Downtown,U-Haul,26ft truck,moving<br>
+                            2024-01-16,Hotel Stay,Overnight stay,Lodging,125.00,Company Card,Holiday Inn,Holiday Inn Express,1 night,travel
+                        </code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

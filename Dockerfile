@@ -1,49 +1,52 @@
-# Use Python 3.11 slim image
-FROM python:3.11-slim
+# Multi-architecture Dockerfile for PCS Tracker
+FROM --platform=$TARGETPLATFORM python:3.11-slim
+
+# Build arguments for multi-arch support
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
 
 # Set working directory
 WORKDIR /app
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-
-# Install system dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        gcc \
-        sqlite3 \
-        curl \
+# Install system dependencies - need g++ for pandas on ARM
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
+# Copy requirements first for better caching
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY app.py .
+COPY templates/ templates/
 
-# Create necessary directories and set permissions
-RUN mkdir -p uploads data && \
-    chmod +x startup.sh
+# Create necessary directories
+RUN mkdir -p data uploads
 
-# Create a non-root user
-RUN adduser --disabled-password --gecos '' appuser
-
-# Set ownership of app directory
-RUN chown -R appuser:appuser /app
-
-# Expose port
-EXPOSE 5000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5000/ || exit 1
+# Create non-root user for security
+RUN useradd -m -u 1000 pcsuser && \
+    chown -R pcsuser:pcsuser /app
 
 # Switch to non-root user
-USER appuser
+USER pcsuser
 
-# Run the application using startup script
-CMD ["./startup.sh"]
+# Set environment variables
+ENV FLASK_APP=app.py
+ENV PYTHONUNBUFFERED=1
+
+# Expose port
+EXPOSE 5001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5001/')" || exit 1
+
+# Run the application
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "--timeout", "120", "app:app"]

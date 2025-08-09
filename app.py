@@ -1,1105 +1,684 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import FlaskForm
-from flask_wtf.file import FileField, FileAllowed
-from wtforms import StringField, FloatField, IntegerField, SelectField, DateField, PasswordField, BooleanField, TextAreaField
-from wtforms.validators import DataRequired, NumberRange, Email, Length, EqualTo, Optional, ValidationError
-import re
-from werkzeug.security import generate_password_hash, check_password_hash
+from wtforms import StringField, TextAreaField, FloatField, SelectField, FileField, DateField, HiddenField, FieldList, FormField
+from wtforms.validators import Optional, ValidationError
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
-import json
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
 import os
-import tempfile
-from functools import wraps
-
-# Application version and metadata
-__version__ = "1.1.0"
-__author__ = "tebwritescode"
-__website__ = "https://tebwrites.code"
-__docker_hub__ = "tebwritescode"
+import pandas as pd
+import io
+import base64
+import json
+from collections import defaultdict
+import csv
 
 app = Flask(__name__)
-
-# Configuration from environment variables
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///sales_tracker.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = os.environ.get('SQLALCHEMY_TRACK_MODIFICATIONS', 'False').lower() == 'true'
-app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', '16777216'))  # 16MB default
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'pcs-showdown-secret-key-2024')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data/pcs_tracker.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['UPLOAD_FOLDER'] = 'uploads'
 
 db = SQLAlchemy(app)
 
-# Custom email validator that only validates when email is provided
-def validate_email_if_present(form, field):
-    """Custom validator for optional email fields"""
-    if field.data and field.data.strip():
-        # Simple email regex pattern
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, field.data.strip()):
-            raise ValidationError('Invalid email address format')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}
 
-# Custom coerce function for SelectField that handles empty strings
-def coerce_int_or_none(value):
-    """Convert value to int, treating empty strings as None/0"""
-    if value == '' or value is None:
-        return 0
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return 0
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Database Models
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    email = db.Column(db.String(100), nullable=True)  # Made optional
-    password_hash = db.Column(db.String(128), nullable=False)
-    first_name = db.Column(db.String(50), nullable=False)
-    last_name = db.Column(db.String(50), nullable=False) 
-    role = db.Column(db.String(20), default='viewer')  # viewer, user, manager, admin
-    permission_level = db.Column(db.Integer, default=1)  # 1=viewer, 2=user, 3=manager, 4=admin
-    active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_login = db.Column(db.DateTime)
-    
-    # Employee-specific fields (for viewer/employee role)
-    hire_date = db.Column(db.Date, nullable=True)
-    base_salary = db.Column(db.Float, default=0.0)
-    commission_rate = db.Column(db.Float, default=0.05)  # 5% default
-    draw_amount = db.Column(db.Float, default=0.0)
-    
-    # Relationships
-    sales = db.relationship('Sales', backref='user', lazy=True)
-    goals = db.relationship('Goals', backref='user', lazy=True)
-    
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-    
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-    
-    def has_permission(self, required_level):
-        return self.active and self.permission_level >= required_level
-    
-    def get_role_display(self):
-        role_map = {
-            'viewer': 'Viewer',
-            'user': 'User', 
-            'manager': 'Manager',
-            'admin': 'Administrator'
-        }
-        return role_map.get(self.role, 'Unknown')
-
-
-class Sales(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    date = db.Column(db.Date, nullable=False)
-    revenue_amount = db.Column(db.Float, nullable=False)
-    number_of_deals = db.Column(db.Integer, default=1)
-    commission_earned = db.Column(db.Float, default=0.0)
-    draw_payment = db.Column(db.Float, default=0.0)
-    period_type = db.Column(db.String(20), default='month')
-
 class Settings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    default_analytics_period = db.Column(db.String(20), default='YTD')
-    admin_username = db.Column(db.String(50), default='admin')
-    admin_password_hash = db.Column(db.String(128))
-    field_toggles = db.Column(db.Text, default='{}')
     color_scheme = db.Column(db.String(50), default='default')
+    default_view = db.Column(db.String(20), default='list')
+    categories = db.Column(db.Text, default='[]')
+    payment_methods = db.Column(db.Text, default='[]')
+    custom_fields = db.Column(db.Text, default='{}')
+    
+    def get_categories(self):
+        try:
+            return json.loads(self.categories) if self.categories else []
+        except:
+            return []
+    
+    def get_payment_methods(self):
+        try:
+            return json.loads(self.payment_methods) if self.payment_methods else []
+        except:
+            return []
+            
+    def get_custom_fields(self):
+        try:
+            return json.loads(self.custom_fields) if self.custom_fields else {}
+        except:
+            return {}
 
-class Goals(db.Model):
+class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    period_type = db.Column(db.String(20), nullable=False)
-    period_start = db.Column(db.Date, nullable=False)
-    period_end = db.Column(db.Date, nullable=False)
-    revenue_goal = db.Column(db.Float, default=0.0)
-    deals_goal = db.Column(db.Integer, default=0)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.String(200))
+    color = db.Column(db.String(7), default='#0d6efd')
+    icon = db.Column(db.String(50), default='fa-tag')
+    is_default = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class PaymentMethod(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    icon = db.Column(db.String(50), default='fa-credit-card')
+    is_default = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Expense(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    category_id = db.Column(db.Integer, db.ForeignKey('category.id'))
+    cost = db.Column(db.Float, default=0.0)
+    payment_method_id = db.Column(db.Integer, db.ForeignKey('payment_method.id'))
+    date = db.Column(db.Date, default=datetime.utcnow)
+    receipt_image = db.Column(db.LargeBinary)
+    receipt_filename = db.Column(db.String(200))
+    receipt_mimetype = db.Column(db.String(100))
+    location = db.Column(db.String(200))
+    vendor = db.Column(db.String(200))
+    notes = db.Column(db.Text)
+    tags = db.Column(db.String(500))
+    custom_data = db.Column(db.Text, default='{}')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    category = db.relationship('Category', backref='expenses')
+    payment_method = db.relationship('PaymentMethod', backref='expenses')
+    
+    def get_custom_data(self):
+        try:
+            return json.loads(self.custom_data) if self.custom_data else {}
+        except:
+            return {}
+    
+    def set_custom_data(self, data):
+        self.custom_data = json.dumps(data)
 
 # Forms
-class LoginForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired()])
-    password = PasswordField('Password', validators=[DataRequired()])
+class ExpenseForm(FlaskForm):
+    title = StringField('Title', validators=[Optional()])
+    description = TextAreaField('Description', validators=[Optional()])
+    category_id = SelectField('Category', coerce=int, validators=[Optional()])
+    cost = FloatField('Cost ($)', validators=[Optional()])
+    payment_method_id = SelectField('Payment Method', coerce=int, validators=[Optional()])
+    date = DateField('Date', validators=[Optional()], default=datetime.today)
+    receipt = FileField('Receipt/Screenshot', validators=[Optional()])
+    location = StringField('Location', validators=[Optional()])
+    vendor = StringField('Vendor', validators=[Optional()])
+    notes = TextAreaField('Notes', validators=[Optional()])
+    tags = StringField('Tags (comma-separated)', validators=[Optional()])
 
+class CategoryForm(FlaskForm):
+    name = StringField('Category Name')
+    description = StringField('Description', validators=[Optional()])
+    color = StringField('Color', default='#0d6efd', validators=[Optional()])
+    icon = StringField('Icon Class', default='fa-tag', validators=[Optional()])
 
-class SalesForm(FlaskForm):
-    user_id = SelectField('Employee/User', coerce=coerce_int_or_none, validators=[Optional()])
-    date = DateField('Date', validators=[Optional()])
-    revenue_amount = FloatField('Revenue Amount ($)', validators=[Optional(), NumberRange(min=0)])
-    number_of_deals = IntegerField('Number of Deals', validators=[Optional(), NumberRange(min=1)])
-    draw_payment = FloatField('Draw Payment ($)', validators=[Optional(), NumberRange(min=0)])
-
-class UserProfileForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=50)])
-    email = StringField('Email', validators=[Optional(), validate_email_if_present])
-    first_name = StringField('First Name', validators=[DataRequired(), Length(min=1, max=50)])
-    last_name = StringField('Last Name', validators=[DataRequired(), Length(min=1, max=50)])
-    current_password = PasswordField('Current Password')
-    new_password = PasswordField('New Password', validators=[Optional(), Length(min=6)])
-    confirm_password = PasswordField('Confirm New Password', validators=[
-        EqualTo('new_password', message='Passwords must match')
-    ])
-    
-    # Employee fields (for viewer role users)
-    hire_date = DateField('Hire Date', validators=[Optional()])
-    base_salary = FloatField('Base Salary ($)', validators=[Optional(), NumberRange(min=0)])
-    commission_rate = FloatField('Commission Rate (%)', validators=[Optional(), NumberRange(min=0, max=100)])
-    draw_amount = FloatField('Draw Amount ($)', validators=[Optional(), NumberRange(min=0)])
+class PaymentMethodForm(FlaskForm):
+    name = StringField('Payment Method')
+    icon = StringField('Icon Class', default='fa-credit-card', validators=[Optional()])
 
 class SettingsForm(FlaskForm):
-    default_analytics_period = SelectField('Default Analytics Period', 
-                                         choices=[('YTD', 'Year to Date'), ('month', 'Monthly'), 
-                                                ('quarter', 'Quarterly'), ('year', 'Yearly')])
-    commission_display = SelectField('Commission Display', choices=[('percentage', 'Percentage'), ('dollar', 'Dollar Amount')])
-    draw_display = SelectField('Draw Display', choices=[('dollar', 'Dollar Amount'), ('percentage', 'Percentage')])
     color_scheme = SelectField('Color Scheme', choices=[
         ('default', 'Default Blue'),
         ('dark', 'Dark Theme'),
         ('green', 'Nature Green'),
         ('purple', 'Royal Purple'),
-        ('orange', 'Sunset Orange'),
+        ('orange', 'Vibrant Orange'),
         ('teal', 'Ocean Teal'),
-        ('red', 'Corporate Red'),
-        ('pink', 'Modern Pink')
+        ('red', 'Bold Red'),
+        ('pink', 'Soft Pink')
+    ])
+    default_view = SelectField('Default View', choices=[
+        ('list', 'List View'),
+        ('grid', 'Grid View'),
+        ('dashboard', 'Dashboard')
     ])
 
-class GoalsForm(FlaskForm):
-    user_id = SelectField('Employee/User', coerce=coerce_int_or_none, validators=[DataRequired()])
-    period_type = SelectField('Period Type', choices=[('week', 'Weekly'), ('month', 'Monthly'), ('quarter', 'Quarterly')])
-    period_start = DateField('Period Start', validators=[DataRequired()])
-    period_end = DateField('Period End', validators=[DataRequired()])
-    revenue_goal = FloatField('Revenue Goal ($)', validators=[NumberRange(min=0)])
-    deals_goal = IntegerField('Deals Goal', validators=[NumberRange(min=0)])
-
-class BulkUploadForm(FlaskForm):
-    file = FileField('CSV File', validators=[FileAllowed(['csv'], 'CSV files only!')])
-
-class UserForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=50)])
-    email = StringField('Email', validators=[Optional(), validate_email_if_present])
-    first_name = StringField('First Name', validators=[DataRequired(), Length(min=1, max=50)])
-    last_name = StringField('Last Name', validators=[DataRequired(), Length(min=1, max=50)])
-    role = SelectField('Role', choices=[
-        ('viewer', 'Employee - Can view data and sales reports'),
-        ('user', 'Data Entry - Can enter data and view reports'),
-        ('manager', 'Manager - Can manage employees and access advanced features'),
-        ('admin', 'Administrator - Full access to all features')
-    ])
-    active = BooleanField('Active', default=True)
-    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
-    confirm_password = PasswordField('Confirm Password', validators=[
-        DataRequired(), EqualTo('password', message='Passwords must match')
-    ])
+# Initialize default data
+def init_defaults():
+    # Default categories
+    default_categories = [
+        {'name': 'Moving', 'icon': 'fa-truck', 'color': '#0d6efd'},
+        {'name': 'Travel', 'icon': 'fa-plane', 'color': '#28a745'},
+        {'name': 'Housing', 'icon': 'fa-home', 'color': '#dc3545'},
+        {'name': 'Storage', 'icon': 'fa-warehouse', 'color': '#ffc107'},
+        {'name': 'Transportation', 'icon': 'fa-car', 'color': '#17a2b8'},
+        {'name': 'Lodging', 'icon': 'fa-bed', 'color': '#6f42c1'},
+        {'name': 'Food', 'icon': 'fa-utensils', 'color': '#fd7e14'},
+        {'name': 'Supplies', 'icon': 'fa-box', 'color': '#20c997'},
+        {'name': 'Services', 'icon': 'fa-concierge-bell', 'color': '#e83e8c'},
+        {'name': 'Other', 'icon': 'fa-ellipsis-h', 'color': '#6c757d'}
+    ]
     
-    # Employee fields (shown when role is viewer/employee)
-    hire_date = DateField('Hire Date', validators=[Optional()])
-    base_salary = FloatField('Base Salary ($)', validators=[Optional(), NumberRange(min=0)])
-    commission_rate = FloatField('Commission Rate (%)', validators=[Optional(), NumberRange(min=0, max=100)])
-    draw_amount = FloatField('Draw Amount ($)', validators=[Optional(), NumberRange(min=0)])
-
-class UserEditForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=50)])
-    email = StringField('Email', validators=[Optional(), validate_email_if_present])
-    first_name = StringField('First Name', validators=[DataRequired(), Length(min=1, max=50)])
-    last_name = StringField('Last Name', validators=[DataRequired(), Length(min=1, max=50)])
-    role = SelectField('Role', choices=[
-        ('viewer', 'Employee - Can view data and sales reports'),
-        ('user', 'Data Entry - Can enter data and view reports'),
-        ('manager', 'Manager - Can manage employees and access advanced features'),
-        ('admin', 'Administrator - Full access to all features')
-    ])
-    active = BooleanField('Active')
-    new_password = PasswordField('New Password (leave blank to keep current)', validators=[Optional(), Length(min=6)])
-    confirm_password = PasswordField('Confirm New Password', validators=[
-        EqualTo('new_password', message='Passwords must match')
-    ])
+    # Default payment methods
+    default_payment_methods = [
+        {'name': 'Cash', 'icon': 'fa-money-bill'},
+        {'name': 'Credit Card', 'icon': 'fa-credit-card'},
+        {'name': 'Debit Card', 'icon': 'fa-credit-card'},
+        {'name': 'Check', 'icon': 'fa-money-check'},
+        {'name': 'Bank Transfer', 'icon': 'fa-university'},
+        {'name': 'PayPal', 'icon': 'fab fa-paypal'},
+        {'name': 'Venmo', 'icon': 'fa-mobile-alt'},
+        {'name': 'Company Card', 'icon': 'fa-building'},
+        {'name': 'Reimbursement', 'icon': 'fa-hand-holding-usd'},
+        {'name': 'Other', 'icon': 'fa-question-circle'}
+    ]
     
-    # Employee fields (shown when role is viewer/employee)
-    hire_date = DateField('Hire Date', validators=[Optional()])
-    base_salary = FloatField('Base Salary ($)', validators=[Optional(), NumberRange(min=0)])
-    commission_rate = FloatField('Commission Rate (%)', validators=[Optional(), NumberRange(min=0, max=100)])
-    draw_amount = FloatField('Draw Amount ($)', validators=[Optional(), NumberRange(min=0)])
-
-class NewLoginForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired()])
-    password = PasswordField('Password', validators=[DataRequired()])
-
-# Helper functions
-def get_current_user():
-    """Get the currently logged in user"""
-    if 'user_id' in session:
-        return User.query.get(session['user_id'])
-    return None
-
-def login_required(permission_level=1):
-    """Decorator to require login with minimum permission level
-    1=viewer, 2=user, 3=manager, 4=admin
-    """
-    def login_decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            user = get_current_user()
-            if not user or not user.has_permission(permission_level):
-                flash('You need to login with sufficient permissions to access this page.', 'error')
-                return redirect(url_for('analytics'))
-            return f(*args, **kwargs)
-        return wrapper
-    return login_decorator
-
-def admin_required(f):
-    """Decorator specifically for admin-only functions"""
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        user = get_current_user()
-        if not user or not user.has_permission(4):
-            flash('Administrator access required.', 'error')
-            return redirect(url_for('analytics'))
-        return f(*args, **kwargs)
-    return wrapper
-
-def manager_required(f):
-    """Decorator for manager-level functions"""
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        user = get_current_user()
-        if not user or not user.has_permission(3):
-            flash('Manager access or higher required.', 'error')
-            return redirect(url_for('analytics'))
-        return f(*args, **kwargs)
-    return wrapper
-
-def calculate_commission(revenue, commission_rate, field_toggles):
-    toggles = json.loads(field_toggles) if field_toggles else {}
-    if toggles.get('commission_display') == 'dollar':
-        return commission_rate
-    else:
-        return revenue * (commission_rate / 100)
-
-def get_current_color_scheme():
-    try:
-        settings = Settings.query.first()
-        return settings.color_scheme if settings and settings.color_scheme else 'default'
-    except Exception as e:
-        print(f"Error getting color scheme: {e}")
-        return 'default'
-
-def get_period_dates(period_type, custom_start=None, custom_end=None):
-    today = datetime.now().date()
+    # Check if categories exist
+    if Category.query.count() == 0:
+        for cat in default_categories:
+            category = Category(
+                name=cat['name'],
+                icon=cat['icon'],
+                color=cat['color'],
+                is_default=True
+            )
+            db.session.add(category)
     
-    if period_type == 'YTD':
-        start_date = datetime(today.year, 1, 1).date()
-        end_date = today
-    elif period_type == 'month':
-        start_date = datetime(today.year, today.month, 1).date()
-        end_date = today
-    elif period_type == 'quarter':
-        quarter = (today.month - 1) // 3 + 1
-        start_date = datetime(today.year, 3 * quarter - 2, 1).date()
-        end_date = today
-    elif period_type == 'year':
-        start_date = datetime(today.year, 1, 1).date()
-        end_date = datetime(today.year, 12, 31).date()
-    elif period_type == 'custom' and custom_start and custom_end:
-        start_date = custom_start
-        end_date = custom_end
-    else:
-        start_date = today
-        end_date = today
+    # Check if payment methods exist
+    if PaymentMethod.query.count() == 0:
+        for pm in default_payment_methods:
+            payment_method = PaymentMethod(
+                name=pm['name'],
+                icon=pm['icon'],
+                is_default=True
+            )
+            db.session.add(payment_method)
     
-    return start_date, end_date
+    # Check if settings exist
+    if Settings.query.count() == 0:
+        settings = Settings(color_scheme='default')
+        db.session.add(settings)
+    
+    db.session.commit()
 
-# Context processor to make color scheme and user info available in all templates
+# Template context functions
 @app.context_processor
-def inject_template_vars():
-    return {
-        'current_color_scheme': get_current_color_scheme(),
-        'current_user': get_current_user()
-    }
+def inject_helper_functions():
+    def get_recent_expenses(limit=5):
+        return Expense.query.order_by(Expense.date.desc(), Expense.created_at.desc()).limit(limit).all()
+    
+    def get_monthly_total():
+        today = datetime.today()
+        start_of_month = today.replace(day=1)
+        expenses = Expense.query.filter(Expense.date >= start_of_month).all()
+        return sum(e.cost or 0 for e in expenses)
+    
+    def get_expense_count():
+        return Expense.query.count()
+    
+    return dict(
+        get_recent_expenses=get_recent_expenses,
+        get_monthly_total=get_monthly_total,
+        get_expense_count=get_expense_count
+    )
 
 # Routes
 @app.route('/')
 def index():
-    return redirect(url_for('analytics'))
+    settings = Settings.query.first()
+    
+    # Get statistics for the homepage
+    today = datetime.today()
+    month_start = today.replace(day=1)
+    
+    all_expenses = Expense.query.all()
+    month_expenses_query = Expense.query.filter(Expense.date >= month_start).all()
+    recent_expenses = Expense.query.order_by(Expense.date.desc(), Expense.created_at.desc()).limit(5).all()
+    
+    total_expenses = sum(e.cost or 0 for e in all_expenses)
+    month_expenses = sum(e.cost or 0 for e in month_expenses_query)
+    expense_count = len(all_expenses)
+    category_count = Category.query.count()
+    
+    return render_template('index.html', 
+                         settings=settings,
+                         total_expenses=total_expenses,
+                         month_expenses=month_expenses,
+                         expense_count=expense_count,
+                         category_count=category_count,
+                         recent_expenses=recent_expenses)
 
-@app.route('/login', methods=['GET', 'POST'])
-def new_login():
-    form = NewLoginForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
-        
-        if user and user.check_password(form.password.data) and user.active:
-            session['user_id'] = user.id
-            user.last_login = datetime.utcnow()
-            db.session.commit()
-            flash(f'Welcome back, {user.first_name}!', 'success')
-            
-            # Redirect based on role
-            if user.has_permission(4):  # Admin
-                return redirect(url_for('management'))
-            elif user.has_permission(3):  # Manager
-                return redirect(url_for('analytics'))
-            else:  # User/Viewer
-                return redirect(url_for('analytics'))
-        else:
-            flash('Invalid username or password, or account is inactive.', 'error')
-    
-    # Redirect to analytics page which now contains the login form
-    return redirect(url_for('analytics'))
+@app.route('/expenses')
+def expenses():
+    settings = Settings.query.first()
+    expenses_list = Expense.query.order_by(Expense.date.desc(), Expense.created_at.desc()).all()
+    total_cost = sum(e.cost or 0 for e in expenses_list)
+    categories = Category.query.all()
+    payment_methods = PaymentMethod.query.all()
+    return render_template('expenses.html', 
+                         expenses=expenses_list, 
+                         total_cost=total_cost, 
+                         settings=settings,
+                         categories=categories,
+                         payment_methods=payment_methods)
 
-# Keep old login for backward compatibility with Settings admin
-@app.route('/admin_login', methods=['GET', 'POST'])
-def login():
-    form = LoginForm()
-    if form.validate_on_submit():
-        settings = Settings.query.first()
-        if not settings:
-            settings = Settings(admin_password_hash=generate_password_hash('admin'))
-            db.session.add(settings)
-            db.session.commit()
-        
-        if (form.username.data == settings.admin_username and 
-            check_password_hash(settings.admin_password_hash, form.password.data)):
-            session['admin_logged_in'] = True
-            flash('Login successful!', 'success')
-            return redirect(url_for('management'))
-        else:
-            flash('Invalid username or password', 'error')
+@app.route('/expense/new', methods=['GET', 'POST'])
+def new_expense():
+    settings = Settings.query.first()
+    form = ExpenseForm()
     
-    return render_template('login.html', form=form)
-
-@app.route('/logout')
-def logout():
-    session.pop('user_id', None)
-    session.pop('admin_logged_in', None)
-    flash('You have been logged out', 'info')
-    return redirect(url_for('analytics'))
-
-@app.route('/test_login')
-def test_login():
-    return render_template('test_login.html')
-
-@app.route('/management')
-@login_required(3)  # Manager level required
-def management():
-    employees = User.query.filter_by(role='viewer').all()  # Show viewer/employee users
-    return render_template('management.html', employees=employees)
-
-@app.route('/analytics')
-def analytics():
-    user = get_current_user()
-    is_logged_in = user is not None
-    show_blur = not is_logged_in
+    # Populate category choices
+    categories = Category.query.order_by(Category.name).all()
+    form.category_id.choices = [(0, 'Select Category')] + [(c.id, c.name) for c in categories]
     
-    period_type = request.args.get('period', 'YTD')
-    custom_start = request.args.get('start_date')
-    custom_end = request.args.get('end_date')
-    
-    if custom_start:
-        custom_start = datetime.strptime(custom_start, '%Y-%m-%d').date()
-    if custom_end:
-        custom_end = datetime.strptime(custom_end, '%Y-%m-%d').date()
-    
-    start_date, end_date = get_period_dates(period_type, custom_start, custom_end)
-    
-    # Get sales data for the period (but show demo data if not logged in)
-    if is_logged_in:
-        sales_data = db.session.query(
-            (User.first_name + ' ' + User.last_name).label('name'),
-            db.func.sum(Sales.revenue_amount).label('total_revenue'),
-            db.func.sum(Sales.number_of_deals).label('total_deals'),
-            db.func.sum(Sales.commission_earned).label('total_commission')
-        ).join(Sales).filter(
-            Sales.date >= start_date,
-            Sales.date <= end_date,
-            User.active == True
-        ).group_by(User.id).all()
-        
-        employees = User.query.filter_by(active=True, role='viewer').all()  # Only viewer/employee users
-    else:
-        # Show demo data for logged out users
-        from collections import namedtuple
-        SalesData = namedtuple('SalesData', ['name', 'total_revenue', 'total_deals', 'total_commission'])
-        sales_data = [
-            SalesData('Demo User 1', 125000, 45, 6250),
-            SalesData('Demo User 2', 98000, 32, 4900),
-            SalesData('Demo User 3', 156000, 52, 7800)
-        ]
-        employees = []
-    
-    # Create login form for the blur overlay
-    login_form = NewLoginForm()
-    
-    return render_template('analytics.html', 
-                         sales_data=sales_data, 
-                         employees=employees,
-                         period_type=period_type,
-                         start_date=start_date,
-                         end_date=end_date,
-                         show_blur=show_blur,
-                         is_logged_in=is_logged_in,
-                         login_form=login_form)
-
-@app.route('/data_entry', methods=['GET', 'POST'])
-@login_required(2)  # User level required
-def data_entry():
-    form = SalesForm()
-    bulk_form = BulkUploadForm()
-    
-    # Populate user/employee choices (viewers and above who can have sales data)
-    employees = User.query.filter_by(active=True, role='viewer').all()
-    form.user_id.choices = [(0, 'Select Employee/User')] + [(e.id, f"{e.first_name} {e.last_name}") for e in employees]
+    # Populate payment method choices
+    payment_methods = PaymentMethod.query.order_by(PaymentMethod.name).all()
+    form.payment_method_id.choices = [(0, 'Select Payment Method')] + [(p.id, p.name) for p in payment_methods]
     
     if form.validate_on_submit():
-        # Handle optional fields with defaults
-        if not form.user_id.data or form.user_id.data == 0:
-            flash('Please select a user/employee for the sales entry', 'error')
-            return render_template('data_entry.html', 
-                                 form=form, 
-                                 bulk_form=bulk_form,
-                                 recent_sales=[])
+        expense = Expense()
+        expense.title = form.title.data or 'Untitled Expense'
+        expense.description = form.description.data
+        expense.category_id = form.category_id.data if form.category_id.data != 0 else None
+        expense.cost = form.cost.data or 0
+        expense.payment_method_id = form.payment_method_id.data if form.payment_method_id.data != 0 else None
+        expense.date = form.date.data
+        expense.location = form.location.data
+        expense.vendor = form.vendor.data
+        expense.notes = form.notes.data
+        expense.tags = form.tags.data
         
-        user = User.query.get(form.user_id.data)
-        if not user:
-            flash('Selected user not found', 'error')
-            return render_template('data_entry.html', 
-                                 form=form, 
-                                 bulk_form=bulk_form,
-                                 recent_sales=[])
+        # Handle file upload
+        if form.receipt.data:
+            file = form.receipt.data
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file_data = file.read()
+                expense.receipt_image = file_data
+                expense.receipt_filename = filename
+                expense.receipt_mimetype = file.content_type
         
-        # Use defaults for optional fields
-        date = form.date.data or datetime.utcnow().date()
-        revenue_amount = form.revenue_amount.data or 0.0
-        number_of_deals = form.number_of_deals.data or 1
-        draw_payment = form.draw_payment.data or 0.0
-        
-        settings = Settings.query.first()
-        field_toggles = settings.field_toggles if settings else '{}'
-        
-        commission = calculate_commission(revenue_amount, 
-                                        user.commission_rate, 
-                                        field_toggles)
-        
-        sale = Sales(
-            user_id=form.user_id.data,
-            date=date,
-            revenue_amount=revenue_amount,
-            number_of_deals=number_of_deals,
-            commission_earned=commission,
-            draw_payment=draw_payment
-        )
-        
-        db.session.add(sale)
+        db.session.add(expense)
         db.session.commit()
-        flash('Sales data added successfully!', 'success')
-        return redirect(url_for('data_entry'))
+        flash('Expense added successfully!', 'success')
+        return redirect(url_for('expenses'))
     
-    recent_sales = Sales.query.join(User).order_by(Sales.date.desc()).limit(10).all()
-    
-    return render_template('data_entry.html', 
-                         form=form, 
-                         bulk_form=bulk_form,
-                         recent_sales=recent_sales)
+    return render_template('expense_form.html', form=form, settings=settings, is_edit=False)
 
-
-@app.route('/profile', methods=['GET', 'POST'])
-@login_required(1)  # Any logged-in user
-def profile():
-    """User profile page - allows users to change their own profile and password"""
-    current_user_obj = get_current_user()
-    form = UserProfileForm()
+@app.route('/expense/<int:id>/edit', methods=['GET', 'POST'])
+def edit_expense(id):
+    settings = Settings.query.first()
+    expense = Expense.query.get_or_404(id)
+    form = ExpenseForm(obj=expense)
     
-    # Populate form with current user data on GET
-    if request.method == 'GET':
-        form.username.data = current_user_obj.username
-        form.email.data = current_user_obj.email
-        form.first_name.data = current_user_obj.first_name
-        form.last_name.data = current_user_obj.last_name
-        # Populate employee fields if user is viewer/employee
-        if current_user_obj.role == 'viewer':
-            form.hire_date.data = current_user_obj.hire_date
-            form.base_salary.data = current_user_obj.base_salary
-            form.commission_rate.data = current_user_obj.commission_rate
-            form.draw_amount.data = current_user_obj.draw_amount
+    # Populate category choices
+    categories = Category.query.order_by(Category.name).all()
+    form.category_id.choices = [(0, 'Select Category')] + [(c.id, c.name) for c in categories]
+    
+    # Populate payment method choices
+    payment_methods = PaymentMethod.query.order_by(PaymentMethod.name).all()
+    form.payment_method_id.choices = [(0, 'Select Payment Method')] + [(p.id, p.name) for p in payment_methods]
     
     if form.validate_on_submit():
-        # Check if username or email conflicts with other users
-        existing_user = User.query.filter(
-            ((User.username == form.username.data) | 
-             (User.email == form.email.data)) &
-            (User.id != current_user_obj.id)
-        ).first()
+        expense.title = form.title.data or 'Untitled Expense'
+        expense.description = form.description.data
+        expense.category_id = form.category_id.data if form.category_id.data != 0 else None
+        expense.cost = form.cost.data or 0
+        expense.payment_method_id = form.payment_method_id.data if form.payment_method_id.data != 0 else None
+        expense.date = form.date.data
+        expense.location = form.location.data
+        expense.vendor = form.vendor.data
+        expense.notes = form.notes.data
+        expense.tags = form.tags.data
+        expense.updated_at = datetime.utcnow()
         
-        if existing_user:
-            flash('Username or email already exists for another user', 'error')
-            return render_template('profile.html', form=form)
-        
-        # Update basic profile information
-        current_user_obj.username = form.username.data
-        current_user_obj.email = form.email.data
-        current_user_obj.first_name = form.first_name.data
-        current_user_obj.last_name = form.last_name.data
-        
-        # Update employee fields if user is viewer/employee
-        if current_user_obj.role == 'viewer':
-            current_user_obj.hire_date = form.hire_date.data
-            current_user_obj.base_salary = form.base_salary.data or 0.0
-            current_user_obj.commission_rate = form.commission_rate.data or 0.05
-            current_user_obj.draw_amount = form.draw_amount.data or 0.0
-        
-        # Handle password change
-        if form.new_password.data:
-            if not form.current_password.data:
-                flash('Current password is required to set a new password', 'error')
-                return render_template('profile.html', form=form)
-            
-            if not current_user_obj.check_password(form.current_password.data):
-                flash('Current password is incorrect', 'error')
-                return render_template('profile.html', form=form)
-            
-            current_user_obj.set_password(form.new_password.data)
-            flash('Password updated successfully!', 'success')
+        # Handle file upload
+        if form.receipt.data:
+            file = form.receipt.data
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file_data = file.read()
+                expense.receipt_image = file_data
+                expense.receipt_filename = filename
+                expense.receipt_mimetype = file.content_type
         
         db.session.commit()
-        flash('Profile updated successfully!', 'success')
-        return redirect(url_for('profile'))
+        flash('Expense updated successfully!', 'success')
+        return redirect(url_for('expenses'))
     
-    return render_template('profile.html', form=form)
+    return render_template('expense_form.html', form=form, expense=expense, settings=settings, is_edit=True)
 
-@app.route('/settings', methods=['GET', 'POST'])
-@admin_required  # Admin only - for system-wide settings
-def settings():
-    settings_obj = Settings.query.first()
-    if not settings_obj:
-        settings_obj = Settings()
-        db.session.add(settings_obj)
-        db.session.commit()
-    
-    form = SettingsForm(obj=settings_obj)
-    
-    if form.validate_on_submit():
-        settings_obj.default_analytics_period = form.default_analytics_period.data
-        
-        field_toggles = {
-            'commission_display': form.commission_display.data,
-            'draw_display': form.draw_display.data
-        }
-        settings_obj.field_toggles = json.dumps(field_toggles)
-        settings_obj.color_scheme = form.color_scheme.data
-        
-        db.session.commit()
-        flash('Settings updated successfully!', 'success')
-        return redirect(url_for('settings'))
-    
-    return render_template('settings.html', form=form)
-
-@app.route('/users')
-@admin_required
-def users():
-    """User management page - admin only"""
-    users = User.query.all()
-    return render_template('users.html', users=users)
-
-@app.route('/add_user', methods=['GET', 'POST'])
-@admin_required
-def add_user():
-    """Add new user - admin only"""
-    form = UserForm()
-    
-    
-    if form.validate_on_submit():
-        # Check if username or email already exists
-        existing_user = User.query.filter(
-            (User.username == form.username.data) | 
-            (User.email == form.email.data)
-        ).first()
-        
-        if existing_user:
-            flash('Username or email already exists', 'error')
-            return render_template('add_user.html', form=form)
-        
-        # Set permission level based on role
-        role_permissions = {
-            'viewer': 1,
-            'user': 2, 
-            'manager': 3,
-            'admin': 4
-        }
-        
-        user = User(
-            username=form.username.data,
-            email=form.email.data if form.email.data else None,
-            first_name=form.first_name.data,
-            last_name=form.last_name.data,
-            role=form.role.data,
-            permission_level=role_permissions[form.role.data],
-            active=form.active.data,
-            hire_date=form.hire_date.data,
-            base_salary=form.base_salary.data or 0.0,
-            commission_rate=(form.commission_rate.data / 100.0) if form.commission_rate.data else 0.05,
-            draw_amount=form.draw_amount.data or 0.0
-        )
-        user.set_password(form.password.data)
-        
-        db.session.add(user)
-        db.session.commit()
-        
-        flash(f'User {user.username} created successfully!', 'success')
-        return redirect(url_for('users'))
-    
-    return render_template('add_user.html', form=form)
-
-@app.route('/edit_user/<int:user_id>', methods=['GET', 'POST'])
-@admin_required
-def edit_user(user_id):
-    """Edit user - admin only"""
-    user = User.query.get_or_404(user_id)
-    form = UserEditForm()
-    
-    # Manually populate form fields (excluding password fields)
-    if request.method == 'GET':
-        form.username.data = user.username
-        form.email.data = user.email
-        form.first_name.data = user.first_name
-        form.last_name.data = user.last_name
-        form.role.data = user.role
-        form.active.data = user.active
-        form.hire_date.data = user.hire_date
-        form.base_salary.data = user.base_salary
-        form.commission_rate.data = (user.commission_rate * 100) if user.commission_rate else 5.0
-        form.draw_amount.data = user.draw_amount
-    
-    if form.validate_on_submit():
-        # Check if username or email conflicts with other users
-        existing_user = User.query.filter(
-            ((User.username == form.username.data) | 
-             (User.email == form.email.data)) &
-            (User.id != user_id)
-        ).first()
-        
-        if existing_user:
-            flash('Username or email already exists for another user', 'error')
-            return render_template('edit_user.html', form=form, user=user)
-        
-        # Set permission level based on role
-        role_permissions = {
-            'viewer': 1,
-            'user': 2,
-            'manager': 3, 
-            'admin': 4
-        }
-        
-        user.username = form.username.data
-        user.email = form.email.data if form.email.data else None
-        user.first_name = form.first_name.data
-        user.last_name = form.last_name.data
-        user.role = form.role.data
-        user.permission_level = role_permissions[form.role.data]
-        user.active = form.active.data
-        user.hire_date = form.hire_date.data
-        user.base_salary = form.base_salary.data or 0.0
-        user.commission_rate = (form.commission_rate.data / 100.0) if form.commission_rate.data else 0.05
-        user.draw_amount = form.draw_amount.data or 0.0
-        
-        # Update password if provided
-        if form.new_password.data:
-            user.set_password(form.new_password.data)
-        
-        db.session.commit()
-        flash(f'User {user.username} updated successfully!', 'success')
-        return redirect(url_for('users'))
-    
-    return render_template('edit_user.html', form=form, user=user)
-
-@app.route('/delete_user/<int:user_id>', methods=['POST'])
-@admin_required
-def delete_user(user_id):
-    """Delete user - admin only"""
-    user = User.query.get_or_404(user_id)
-    current_user = get_current_user()
-    
-    # Prevent deleting yourself
-    if user.id == current_user.id:
-        flash('You cannot delete your own account', 'error')
-        return redirect(url_for('users'))
-    
-    username = user.username
-    db.session.delete(user)
+@app.route('/expense/<int:id>/delete', methods=['POST'])
+def delete_expense(id):
+    expense = Expense.query.get_or_404(id)
+    db.session.delete(expense)
     db.session.commit()
-    
-    flash(f'User {username} deleted successfully', 'success')
-    return redirect(url_for('users'))
+    flash('Expense deleted successfully!', 'success')
+    return redirect(url_for('expenses'))
 
-@app.route('/api/sales_data')
-@login_required(1)  # Viewer level required
-def api_sales_data():
-    period_type = request.args.get('period', 'YTD')
-    
-    start_date, end_date = get_period_dates(period_type)
-    
-    sales_data = db.session.query(
-        (User.first_name + ' ' + User.last_name).label('name'),
-        db.func.sum(Sales.revenue_amount).label('revenue'),
-        db.func.sum(Sales.number_of_deals).label('deals'),
-        db.func.sum(Sales.commission_earned).label('commission')
-    ).join(Sales).filter(
-        Sales.date >= start_date,
-        Sales.date <= end_date,
-        User.active == True
-    ).group_by(User.id).all()
-    
-    data = {
-        'labels': [row.name for row in sales_data],
-        'revenue': [float(row.revenue) for row in sales_data],
-        'deals': [int(row.deals) for row in sales_data],
-        'commission': [float(row.commission) for row in sales_data]
-    }
-    
-    return jsonify(data)
+@app.route('/expense/<int:id>/receipt')
+def view_receipt(id):
+    expense = Expense.query.get_or_404(id)
+    if expense.receipt_image:
+        return send_file(
+            io.BytesIO(expense.receipt_image),
+            mimetype=expense.receipt_mimetype or 'image/jpeg',
+            as_attachment=False,
+            download_name=expense.receipt_filename or 'receipt.jpg'
+        )
+    flash('No receipt found for this expense', 'warning')
+    return redirect(url_for('expenses'))
 
-@app.route('/api/trends_data')
-@login_required(1)  # Viewer level required
-def api_trends_data():
-    period_type = request.args.get('period', 'month')
+@app.route('/dashboard')
+def dashboard():
+    settings = Settings.query.first()
     
-    # Get monthly trends for the past 12 months
-    sales_trends = db.session.query(
-        db.func.strftime('%Y-%m', Sales.date).label('month'),
-        db.func.sum(Sales.revenue_amount).label('revenue'),
-        db.func.sum(Sales.number_of_deals).label('deals')
-    ).filter(
-        Sales.date >= datetime.now().date() - timedelta(days=365)
-    ).group_by(db.func.strftime('%Y-%m', Sales.date)).all()
+    # Get date range for filtering
+    period = request.args.get('period', 'month')
+    today = datetime.today()
     
-    data = {
-        'labels': [row.month for row in sales_trends],
-        'revenue': [float(row.revenue) for row in sales_trends],
-        'deals': [int(row.deals) for row in sales_trends]
-    }
+    if period == 'week':
+        start_date = today - timedelta(days=7)
+    elif period == 'month':
+        start_date = today - timedelta(days=30)
+    elif period == 'quarter':
+        start_date = today - timedelta(days=90)
+    elif period == 'year':
+        start_date = today - timedelta(days=365)
+    else:
+        start_date = today - timedelta(days=30)
     
-    return jsonify(data)
-
-@app.route('/bulk_upload', methods=['POST'])
-@login_required(2)  # User level required
-def bulk_upload():
-    if not PANDAS_AVAILABLE:
-        flash('Pandas library is not installed. Bulk upload is disabled.', 'error')
-        return redirect(url_for('data_entry'))
-        
-    form = BulkUploadForm()
-    if form.validate_on_submit():
-        file = form.file.data
-        if file:
-            try:
-                df = pd.read_csv(file)
-                required_columns = ['employee_name', 'date', 'revenue_amount', 'number_of_deals']
-                
-                if not all(col in df.columns for col in required_columns):
-                    flash('CSV must contain columns: employee_name, date, revenue_amount, number_of_deals', 'error')
-                    return redirect(url_for('data_entry'))
-                
-                settings = Settings.query.first()
-                field_toggles = settings.field_toggles if settings else '{}'
-                
-                for _, row in df.iterrows():
-                    # Try to find user by full name or first/last name combination
-                    full_name = row['employee_name']
-                    name_parts = full_name.split(' ', 1)
-                    if len(name_parts) == 2:
-                        user = User.query.filter_by(first_name=name_parts[0], last_name=name_parts[1]).first()
-                    else:
-                        user = User.query.filter_by(first_name=full_name).first()
-                    
-                    if user:
-                        commission = calculate_commission(row['revenue_amount'], 
-                                                        user.commission_rate, 
-                                                        field_toggles)
-                        
-                        sale = Sales(
-                            user_id=user.id,
-                            date=datetime.strptime(row['date'], '%Y-%m-%d').date(),
-                            revenue_amount=row['revenue_amount'],
-                            number_of_deals=row['number_of_deals'],
-                            commission_earned=commission,
-                            draw_payment=row.get('draw_payment', 0.0)
-                        )
-                        db.session.add(sale)
-                
-                db.session.commit()
-                flash('Bulk upload completed successfully!', 'success')
-                
-            except Exception as e:
-                flash(f'Error processing file: {str(e)}', 'error')
+    expenses_query = Expense.query.filter(Expense.date >= start_date)
+    all_expenses = expenses_query.all()
     
-    return redirect(url_for('data_entry'))
+    # Calculate statistics
+    total_expenses = sum(e.cost or 0 for e in all_expenses)
+    expense_count = len(all_expenses)
+    avg_expense = total_expenses / expense_count if expense_count > 0 else 0
+    
+    # Get top categories
+    category_totals = defaultdict(float)
+    for expense in all_expenses:
+        if expense.category:
+            category_totals[expense.category.name] += expense.cost or 0
+    
+    # Get payment method breakdown
+    payment_totals = defaultdict(float)
+    for expense in all_expenses:
+        if expense.payment_method:
+            payment_totals[expense.payment_method.name] += expense.cost or 0
+    
+    return render_template('dashboard.html', 
+                         settings=settings,
+                         total_expenses=total_expenses,
+                         expense_count=expense_count,
+                         avg_expense=avg_expense,
+                         period=period)
 
-@app.route('/api/save_theme', methods=['POST'])
-@admin_required
-def save_theme():
-    try:
-        data = request.get_json()
-        theme = data.get('theme', 'default')
-        
-        # Validate theme
-        valid_themes = ['default', 'dark', 'green', 'purple', 'orange', 'teal', 'red', 'pink']
-        if theme not in valid_themes:
-            return jsonify({'error': 'Invalid theme'}), 400
-        
-        # Update settings
-        settings = Settings.query.first()
-        if settings:
-            settings.color_scheme = theme
-            db.session.commit()
-            return jsonify({'success': True, 'theme': theme})
-        else:
-            return jsonify({'error': 'Settings not found'}), 404
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/health')
-def health_check():
-    """Health check endpoint for diagnosing issues"""
-    try:
-        # Check database connection
-        with app.app_context():
-            db.session.execute(db.text('SELECT 1'))
-            
-        # Check if settings exist
-        settings = Settings.query.first()
-        
-        # Basic status available to everyone
-        status = {
-            'status': 'healthy',
-            'version': __version__,
-            'author': __author__,
-            'website': __website__,
-            'database': 'connected',
-            'settings': 'found' if settings else 'missing'
-        }
-        
-        # Add sensitive information only for authenticated admin users
-        current_user = get_current_user()
-        if current_user and current_user.has_permission(4):
-            status.update({
-                'database_uri': app.config['SQLALCHEMY_DATABASE_URI'],
-                'current_theme': get_current_color_scheme()
-            })
-        
-        return jsonify(status)
-        
-    except Exception as e:
-        status = {
-            'status': 'unhealthy',
-            'version': __version__,
-            'author': __author__,
-            'website': __website__,
-            'database': 'disconnected',
-            'error': str(e)
-        }
-        
-        # Add sensitive information only for authenticated admin users
-        current_user = get_current_user()
-        if current_user and current_user.has_permission(4):
-            status['database_uri'] = app.config['SQLALCHEMY_DATABASE_URI']
-        
-        return jsonify(status), 500
-
-@app.route('/api/version')
-def api_version():
-    """Version information endpoint"""
+@app.route('/api/expense_data')
+def api_expense_data():
+    period = request.args.get('period', 'month')
+    today = datetime.today()
+    
+    if period == 'week':
+        start_date = today - timedelta(days=7)
+    elif period == 'month':
+        start_date = today - timedelta(days=30)
+    elif period == 'quarter':
+        start_date = today - timedelta(days=90)
+    elif period == 'year':
+        start_date = today - timedelta(days=365)
+    else:
+        start_date = today - timedelta(days=30)
+    
+    expenses = Expense.query.filter(Expense.date >= start_date).all()
+    
+    # Category breakdown
+    category_data = defaultdict(float)
+    for expense in expenses:
+        category_name = expense.category.name if expense.category else 'Uncategorized'
+        category_data[category_name] += expense.cost or 0
+    
+    # Payment method breakdown
+    payment_data = defaultdict(float)
+    for expense in expenses:
+        payment_name = expense.payment_method.name if expense.payment_method else 'Unknown'
+        payment_data[payment_name] += expense.cost or 0
+    
+    # Daily trend
+    daily_data = defaultdict(float)
+    for expense in expenses:
+        date_str = expense.date.strftime('%Y-%m-%d') if expense.date else 'Unknown'
+        daily_data[date_str] += expense.cost or 0
+    
     return jsonify({
-        'version': __version__,
-        'author': __author__,
-        'website': __website__,
-        'docker_hub': __docker_hub__,
-        'application': 'Sales Tracker'
+        'categories': {
+            'labels': list(category_data.keys()),
+            'data': list(category_data.values())
+        },
+        'payment_methods': {
+            'labels': list(payment_data.keys()),
+            'data': list(payment_data.values())
+        },
+        'daily_trend': {
+            'labels': sorted(daily_data.keys()),
+            'data': [daily_data[k] for k in sorted(daily_data.keys())]
+        }
     })
 
-@app.route('/init_db')
-@admin_required
-def reinit_database():
-    """Re-initialize database if needed"""
-    try:
-        result = init_db()
-        if result:
-            flash('Database reinitialized successfully!', 'success')
-        else:
-            flash('Database reinitialization failed!', 'error')
-    except Exception as e:
-        flash(f'Database reinitialization error: {str(e)}', 'error')
+@app.route('/settings', methods=['GET', 'POST'])
+def settings_page():
+    settings = Settings.query.first()
+    if not settings:
+        settings = Settings()
+        db.session.add(settings)
+        db.session.commit()
     
-    return redirect(url_for('settings'))
-
-
-# Initialize database
-def init_db():
-    max_retries = 3
-    retry_count = 0
+    form = SettingsForm(obj=settings)
     
-    while retry_count < max_retries:
-        try:
-            print(f"Database initialization attempt {retry_count + 1}/{max_retries}")
-            
-            # Get current database URI
-            db_uri = app.config['SQLALCHEMY_DATABASE_URI']
-            print(f"Using database URI: {db_uri}")
-            
-            if db_uri.startswith('sqlite:///'):
-                db_path = db_uri.replace('sqlite:///', '')
-                db_dir = os.path.dirname(db_path) if os.path.dirname(db_path) else '.'
+    if form.validate_on_submit():
+        settings.color_scheme = form.color_scheme.data
+        settings.default_view = form.default_view.data
+        db.session.commit()
+        flash('Settings updated successfully!', 'success')
+        return redirect(url_for('settings_page'))
+    
+    categories = Category.query.order_by(Category.name).all()
+    payment_methods = PaymentMethod.query.order_by(PaymentMethod.name).all()
+    expenses = Expense.query.all()
+    
+    return render_template('settings.html', 
+                         form=form, 
+                         settings=settings,
+                         categories=categories,
+                         payment_methods=payment_methods,
+                         expenses=expenses)
+
+@app.route('/settings/category/add', methods=['POST'])
+def add_category():
+    form = CategoryForm()
+    if form.validate_on_submit():
+        category = Category(
+            name=form.name.data,
+            description=form.description.data,
+            color=form.color.data,
+            icon=form.icon.data
+        )
+        db.session.add(category)
+        db.session.commit()
+        flash(f'Category "{form.name.data}" added successfully!', 'success')
+    return redirect(url_for('settings_page'))
+
+@app.route('/settings/category/<int:id>/delete', methods=['POST'])
+def delete_category(id):
+    category = Category.query.get_or_404(id)
+    if not category.is_default:
+        # Update expenses to remove this category
+        Expense.query.filter_by(category_id=id).update({'category_id': None})
+        db.session.delete(category)
+        db.session.commit()
+        flash(f'Category "{category.name}" deleted successfully!', 'success')
+    else:
+        flash('Cannot delete default categories', 'warning')
+    return redirect(url_for('settings_page'))
+
+@app.route('/settings/payment/add', methods=['POST'])
+def add_payment_method():
+    form = PaymentMethodForm()
+    if form.validate_on_submit():
+        payment = PaymentMethod(
+            name=form.name.data,
+            icon=form.icon.data
+        )
+        db.session.add(payment)
+        db.session.commit()
+        flash(f'Payment method "{form.name.data}" added successfully!', 'success')
+    return redirect(url_for('settings_page'))
+
+@app.route('/settings/payment/<int:id>/delete', methods=['POST'])
+def delete_payment_method(id):
+    payment = PaymentMethod.query.get_or_404(id)
+    if not payment.is_default:
+        # Update expenses to remove this payment method
+        Expense.query.filter_by(payment_method_id=id).update({'payment_method_id': None})
+        db.session.delete(payment)
+        db.session.commit()
+        flash(f'Payment method "{payment.name}" deleted successfully!', 'success')
+    else:
+        flash('Cannot delete default payment methods', 'warning')
+    return redirect(url_for('settings_page'))
+
+@app.route('/export')
+def export_csv():
+    expenses = Expense.query.order_by(Expense.date.desc()).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow(['Date', 'Title', 'Description', 'Category', 'Cost', 'Payment Method', 
+                    'Location', 'Vendor', 'Notes', 'Tags', 'Has Receipt'])
+    
+    # Write data
+    for expense in expenses:
+        writer.writerow([
+            expense.date.strftime('%Y-%m-%d') if expense.date else '',
+            expense.title or '',
+            expense.description or '',
+            expense.category.name if expense.category else '',
+            expense.cost or 0,
+            expense.payment_method.name if expense.payment_method else '',
+            expense.location or '',
+            expense.vendor or '',
+            expense.notes or '',
+            expense.tags or '',
+            'Yes' if expense.receipt_image else 'No'
+        ])
+    
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode()),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'pcs_expenses_{datetime.now().strftime("%Y%m%d")}.csv'
+    )
+
+@app.route('/import', methods=['GET', 'POST'])
+def import_csv():
+    settings = Settings.query.first()
+    
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file selected', 'warning')
+            return redirect(url_for('import_csv'))
+        
+        file = request.files['file']
+        if file.filename == '':
+            flash('No file selected', 'warning')
+            return redirect(url_for('import_csv'))
+        
+        if file and file.filename.endswith('.csv'):
+            try:
+                df = pd.read_csv(io.StringIO(file.read().decode('utf-8')))
                 
-                print(f"Database path: {db_path}")
-                print(f"Database directory: {db_dir}")
+                # Get category and payment method mappings
+                categories = {c.name: c.id for c in Category.query.all()}
+                payment_methods = {p.name: p.id for p in PaymentMethod.query.all()}
                 
-                # Ensure directory exists
-                if db_dir and db_dir != '.' and db_dir != '':
-                    try:
-                        os.makedirs(db_dir, mode=0o755, exist_ok=True)
-                        print(f"✓ Directory {db_dir} created/verified")
-                    except Exception as e:
-                        print(f"✗ Failed to create directory {db_dir}: {e}")
-                        # Fall back to current directory
-                        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sales_tracker.db'
-                        db_path = 'sales_tracker.db'
-                        db_dir = '.'
-                        print("Falling back to current directory")
-                
-                # Test write permissions
-                test_file = os.path.join(db_dir, '.write_test')
-                try:
-                    with open(test_file, 'w') as f:
-                        f.write('test')
-                    os.remove(test_file)
-                    print(f"✓ Directory {db_dir} is writable")
-                except (IOError, OSError) as e:
-                    print(f"✗ Directory {db_dir} is not writable: {e}")
-                    if retry_count < max_retries - 1:
-                        # Try different fallback paths
-                        fallback_paths = [
-                            'sqlite:///sales_tracker.db',
-                            'sqlite:////tmp/sales_tracker.db',
-                            'sqlite:///:memory:'
-                        ]
-                        if retry_count < len(fallback_paths):
-                            app.config['SQLALCHEMY_DATABASE_URI'] = fallback_paths[retry_count]
-                            print(f"Trying fallback URI: {fallback_paths[retry_count]}")
-                            retry_count += 1
-                            continue
-            
-            # Recreate SQLAlchemy engine with new URI
-            db.engine.dispose()
-            
-            with app.app_context():
-                print("Creating database tables...")
-                db.create_all()
-                print("✓ Database tables created")
-                
-                # Test database connection
-                print("Testing database connection...")
-                db.session.execute(db.text('SELECT 1'))
-                print("✓ Database connection successful")
-                
-                # Create default admin user if not exists
-                print("Checking for default admin user...")
-                admin_user = User.query.filter_by(role='admin').first()
-                if not admin_user:
-                    admin_user = User(
-                        username='admin',
-                        email='admin@salestracker.local',
-                        first_name='System',
-                        last_name='Administrator',
-                        role='admin',
-                        permission_level=4,
-                        active=True
-                    )
-                    admin_user.set_password('admin')
-                    db.session.add(admin_user)
-                    print("✓ Default admin user created (username: admin, password: admin)")
-                else:
-                    print("✓ Admin user already exists")
-                
-                # Create default settings if not exists
-                settings = Settings.query.first()
-                if not settings:
-                    settings = Settings(
-                        admin_username='admin',
-                        admin_password_hash=generate_password_hash('admin'),
-                        color_scheme='default'
-                    )
-                    db.session.add(settings)
-                    print("✓ Default settings created")
-                else:
-                    print("✓ Settings already exist")
+                imported_count = 0
+                for _, row in df.iterrows():
+                    expense = Expense()
+                    expense.title = row.get('Title', 'Imported Expense')
+                    expense.description = row.get('Description', '')
+                    expense.cost = float(row.get('Cost', 0))
+                    expense.location = row.get('Location', '')
+                    expense.vendor = row.get('Vendor', '')
+                    expense.notes = row.get('Notes', '')
+                    expense.tags = row.get('Tags', '')
+                    
+                    # Parse date
+                    if 'Date' in row and pd.notna(row['Date']):
+                        try:
+                            expense.date = pd.to_datetime(row['Date']).date()
+                        except:
+                            expense.date = datetime.today().date()
+                    
+                    # Map category
+                    if 'Category' in row and row['Category'] in categories:
+                        expense.category_id = categories[row['Category']]
+                    
+                    # Map payment method
+                    if 'Payment Method' in row and row['Payment Method'] in payment_methods:
+                        expense.payment_method_id = payment_methods[row['Payment Method']]
+                    
+                    db.session.add(expense)
+                    imported_count += 1
                 
                 db.session.commit()
+                flash(f'Successfully imported {imported_count} expenses!', 'success')
+                return redirect(url_for('expenses'))
                 
-                print("✓ Database initialization completed successfully!")
-                return True
-                
-        except Exception as e:
-            print(f"✗ Database initialization attempt {retry_count + 1} failed: {e}")
-            print(f"Error type: {type(e).__name__}")
-            
-            retry_count += 1
-            
-            if retry_count < max_retries:
-                # Try different database configurations
-                if retry_count == 1:
-                    # Try current directory
-                    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sales_tracker.db'
-                    print("Retrying with current directory database...")
-                elif retry_count == 2:
-                    # Try in-memory database as last resort
-                    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-                    print("Retrying with in-memory database...")
-                
-                # Recreate the database object
-                try:
-                    db.engine.dispose()
-                except:
-                    pass
-            else:
-                print("✗ All database initialization attempts failed!")
-                print("The application will continue but may not function properly.")
-                print("Please check file permissions and disk space.")
-                return False
+            except Exception as e:
+                flash(f'Error importing file: {str(e)}', 'danger')
+                return redirect(url_for('import_csv'))
     
-    return False
+    categories = Category.query.all()
+    payment_methods = PaymentMethod.query.all()
+    return render_template('import.html', settings=settings, categories=categories, payment_methods=payment_methods)
 
-# Global flag to track database initialization
-_db_initialized = False
+@app.route('/template')
+def download_template():
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow(['Date', 'Title', 'Description', 'Category', 'Cost', 'Payment Method', 
+                    'Location', 'Vendor', 'Notes', 'Tags'])
+    
+    # Add sample rows
+    writer.writerow(['2024-01-15', 'Moving Truck Rental', 'U-Haul 26ft truck', 'Moving', '299.99', 
+                    'Credit Card', 'U-Haul Downtown', 'U-Haul', 'Included insurance', 'moving,transport'])
+    writer.writerow(['2024-01-16', 'Hotel Stay', 'Overnight during move', 'Lodging', '125.00', 
+                    'Company Card', 'Holiday Inn Express', 'Holiday Inn', '1 night stay', 'lodging,travel'])
+    
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode()),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name='pcs_import_template.csv'
+    )
 
-def ensure_database():
-    """Ensure database is initialized (thread-safe)"""
-    global _db_initialized
-    if not _db_initialized:
-        try:
-            # Test if database is working
-            with app.app_context():
-                db.session.execute(db.text('SELECT 1'))
-                Settings.query.first()
-                _db_initialized = True
-        except Exception as e:
-            print(f"Database not working, initializing: {e}")
-            if init_db():
-                _db_initialized = True
+@app.errorhandler(413)
+def too_large(e):
+    flash('File is too large. Maximum size is 16MB.', 'danger')
+    return redirect(url_for('new_expense'))
 
-# Initialize database on startup (only when not running under Gunicorn)
+# Create tables and initialize data
+with app.app_context():
+    os.makedirs('data', exist_ok=True)
+    os.makedirs('uploads', exist_ok=True)
+    db.create_all()
+    init_defaults()
+
 if __name__ == '__main__':
-    init_db()
-else:
-    # For Gunicorn, initialize on first request
-    @app.before_request
-    def check_database():
-        ensure_database()
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5001)

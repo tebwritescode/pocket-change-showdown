@@ -1,288 +1,442 @@
-# TODO: Notes to Self
-- Within the docker container, the path for the database file is actually /app/instance; spent too much API trying to track this down already, not worried about it for now until this goes actually approved
-- Versioning is app.py:18 and templates/base.html:578
-- Dont forget to deal with tagging properly in docker
-- use dev tag for development use $(date +%m%d%y%H%M) before updating latest use latest for working only
+# 🎯 PCS Tracker - Pocket Change Showdown
 
+<div align="center">
 
-# Sales Tracker v1.0.0
+![PCS Logo](https://img.shields.io/badge/P-C-S-0d6efd?style=for-the-badge&labelColor=0d6efd&color=0d6efd)
+![Flask](https://img.shields.io/badge/Flask-2.3.3-000000?style=for-the-badge&logo=flask)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)
 
-A comprehensive Flask web application for tracking sales performance, managing employees, and analyzing business metrics.
+Track every penny of your PCS (Permanent Change of Station) move expenses with style! 💰
 
-## Version Information
+[Features](#features) • [Quick Start](#quick-start) • [Installation](#installation) • [Documentation](#documentation) • [Contributing](#contributing)
 
-- **Version**: 1.1.0
-- **Author**: [tebbydog0605](https://github.com/tebbydog0605)
-- **Docker Hub**: [tebwritescode](https://hub.docker.com/u/tebwritescode)
-- **Website**: [tebwrites.code](https://tebwrites.code)
-
-## Features
-
-### Core Functionality
-- **Employee Management**: Add, edit, and manage sales employees with commission rates and draw amounts
-- **Sales Data Entry**: Manual entry and bulk CSV upload for sales records
-- **Analytics Dashboard**: Interactive charts and reports with multiple time period filters
-- **Admin Panel**: Password-protected management interface
-
-### Database Schema
-- **Employee Table**: ID, name, hire date, active status, commission rate, draw amount
-- **Sales Table**: ID, employee ID, date, revenue, deals count, commission, draw payment, period type
-- **Settings Table**: Default analytics period, admin credentials, field display toggles
-- **Goals Table**: Employee goals by time period with revenue and deal targets
-
-### Three Main Pages
-
-#### 1. Management Tab (Password Protected)
-- Login form with username/password authentication
-- Employee management interface
-- Settings panel for admin credentials and system configuration
-- Field toggle switches for commission/draw display (% vs $)
-- **Color scheme customization with 8 preset themes**
-- Goal setting interface for employees
-
-#### 2. Analytics Page (Public Access)
-- Year-to-Date sales view by default
-- Interactive charts using Chart.js:
-  - Bar charts: Employee revenue comparison
-  - Pie charts: Deal distribution
-  - Line charts: Sales trends over time
-- Time period filters: Week, Month, Quarter, Year, Custom date range
-- Export functionality for reports
-- Key performance indicators and metrics
-- **Adaptive UI that responds to selected color scheme**
-
-#### 3. Data Entry Page (Public Access)
-- Form for manual sales data input
-- Automatic commission calculation based on employee rates
-- Draw payment tracking with running balance
-- Bulk CSV import functionality
-- Data validation and error handling
-- Recent sales records display
-- **Themed interface matching selected color scheme**
-
-## Technical Stack
-
-- **Backend**: Flask with SQLAlchemy ORM
-- **Database**: SQLite with proper relationships
-- **Forms**: Flask-WTF with CSRF protection
-- **Security**: Werkzeug password hashing, session management
-- **Frontend**: Bootstrap 5 responsive UI
-- **Charts**: Chart.js for data visualization
-- **Deployment**: Docker containerization
-
-## Installation & Setup
-
-### Quick Start with Docker (Recommended)
-
-1. **Easy setup with the provided script**:
-   ```bash
-   git clone <repository-url>
-   cd sales-tracker
-   chmod +x setup.sh
-   ./setup.sh
-   ```
-
-2. **Or manually with Docker Compose**:
-   ```bash
-   docker-compose up --build
-   ```
-
-3. **Access the application**:
-   - Open http://localhost:5000
-   - Default admin credentials: `admin` / `admin`
-
-### Setup Options
-
-**Development Mode** (default):
-```bash
-./setup.sh --dev
-# or
-docker-compose up --build
-```
-
-**Production Mode** (with Nginx reverse proxy):
-```bash
-./setup.sh --production
-```
-
-**Persistent Data Mode** (recommended for production):
-```bash
-./setup.sh --persistent
-# Access at http://localhost:5001
-```
-
-### Troubleshooting Database Issues
-
-If you encounter SQLite permission errors:
-
-1. **Use the in-container database** (default):
-   ```bash
-   docker run -p 5000:5000 -e DATABASE_URL=sqlite:///sales_tracker.db sales-tracker
-   ```
-
-2. **Fix local directory permissions**:
-   ```bash
-   mkdir -p data uploads
-   chmod 755 data uploads
-   ```
-
-3. **Run with persistent data**:
-   ```bash
-   ./setup.sh --persistent
-   ```
-
-### Local Development
-
-1. **Install dependencies**:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-2. **Run the application**:
-   ```bash
-   python app.py
-   # or
-   python run.py
-   ```
-
-3. **Access at**: http://localhost:5000
-
-## Configuration
-
-### Environment Variables
-- `SECRET_KEY`: Flask secret key for sessions
-- `FLASK_ENV`: Development or production mode
-- `DATABASE_URL`: Database connection string (optional)
-
-### Default Settings
-- Default admin username: `admin`
-- Default admin password: `admin`
-- Default analytics period: Year-to-Date
-- Database: SQLite (`sales_tracker.db`)
-
-## Usage Guide
-
-### Initial Setup
-1. Access the application at http://localhost:5000
-2. Click "Admin Login" and use default credentials
-3. Go to Settings to change admin password
-4. Add employees via Management > Add Employee
-
-### Adding Sales Data
-1. Navigate to Data Entry page
-2. Select employee, enter date, revenue, and deal count
-3. Commission is calculated automatically
-4. For bulk uploads, use CSV with columns: employee_name, date, revenue_amount, number_of_deals
-
-### Viewing Analytics
-1. Analytics page shows Year-to-Date data by default
-2. Use period filter to change time range
-3. Charts update automatically
-4. Export data using the Export button
-
-### Managing Employees
-1. Access Management tab (admin login required)
-2. Add/edit employees with commission rates and draw amounts
-3. Set goals for employees by time period
-4. Configure system settings and field display options
-
-### Customizing Color Schemes
-1. **Quick Theme Switch**: Use the palette icon in the navbar to instantly change themes
-2. **Settings Panel**: Access Settings > Color Scheme for full customization
-3. **Live Preview**: See theme changes instantly with color palette preview
-4. **Theme Options**: Choose from 8 professionally designed color schemes:
-   - **Default Blue**: Classic professional blue theme
-   - **Dark Theme**: Modern dark interface with reduced eye strain
-   - **Nature Green**: Fresh green palette inspired by nature
-   - **Royal Purple**: Elegant purple scheme for premium feel
-   - **Sunset Orange**: Warm orange tones for energy and creativity
-   - **Ocean Teal**: Calming teal colors for focus and clarity
-   - **Corporate Red**: Bold red theme for dynamic environments
-   - **Modern Pink**: Contemporary pink palette for modern aesthetics
-5. **Persistent Settings**: Admin theme preferences are saved to database
-6. **Guest Themes**: Non-admin users can use localStorage for temporary theme preferences
-
-## File Structure
-
-```
-sales-tracker/
-├── app.py                 # Main Flask application
-├── requirements.txt       # Python dependencies
-├── Dockerfile            # Docker configuration
-├── docker-compose.yml    # Docker Compose setup
-├── nginx.conf            # Nginx reverse proxy config
-├── templates/            # HTML templates
-│   ├── base.html         # Base template
-│   ├── login.html        # Admin login
-│   ├── analytics.html    # Analytics dashboard
-│   ├── data_entry.html   # Sales data entry
-│   ├── management.html   # Employee management
-│   ├── add_employee.html # Add employee form
-│   ├── edit_employee.html# Edit employee form
-│   └── settings.html     # System settings
-├── uploads/              # CSV upload directory
-└── data/                 # Database storage
-```
-
-## API Endpoints
-
-- `GET /api/sales_data?period=YTD` - Sales data for charts
-- `GET /api/trends_data` - Historical trends data  
-- `POST /bulk_upload` - CSV bulk upload
-
-## Security Features
-
-- Password hashing with Werkzeug
-- CSRF protection on all forms
-- Session-based authentication
-- Input validation and sanitization
-- SQL injection prevention via SQLAlchemy ORM
-
-## Performance Features
-
-- Responsive Bootstrap 5 design
-- Mobile-friendly interface
-- Efficient database queries
-- Chart.js for smooth visualizations
-- Docker containerization for easy deployment
-
-## Maintenance
-
-### Database Backup
-```bash
-docker exec sales-tracker-app sqlite3 /app/sales_tracker.db ".backup /app/data/backup.db"
-```
-
-### Updating the Application
-```bash
-docker-compose down
-docker-compose up --build
-```
-
-### Logs
-```bash
-docker-compose logs -f sales-tracker
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes and test
-4. Submit a pull request
-
-## License
-
-Built with Flask & Bootstrap. © 2024 Sales Tracker.
-
-## Support
-
-For issues and questions, please create an issue in the repository or contact [tebbydog0605](https://github.com/tebbydog0605).
+</div>
 
 ---
 
-**Created by**: [tebbydog0605](https://github.com/tebbydog0605)  
-**Docker Hub**: [tebwritescode](https://hub.docker.com/u/tebwritescode)  
-**Website**: [tebwrites.code](https://tebwrites.code)
+## 📋 Table of Contents
+
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+  - [Docker](#docker)
+  - [Kubernetes](#kubernetes)
+  - [Local Development](#local-development)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [API Documentation](#api-documentation)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
+
+## ✨ Features
+
+### Core Functionality
+- 📸 **Receipt Management** - Upload and store receipt images/PDFs (up to 16MB)
+- 💳 **Multiple Payment Methods** - Track how you paid (Cash, Credit, Debit, etc.)
+- 🏷️ **Smart Categorization** - Pre-defined PCS categories (Moving, Travel, Housing, etc.)
+- 📊 **Analytics Dashboard** - Interactive charts with Chart.js
+- 🎨 **8 Color Themes** - Personalize your experience
+- 📱 **Mobile Responsive** - Track expenses on the go
+- 🔒 **No Login Required** - Simple, secure, and private
+
+### Data Management
+- 📥 **CSV Import** - Bulk upload expenses from spreadsheets
+- 📤 **CSV Export** - Download all data for records
+- 📄 **Template Download** - Get started with the right format
+- 💾 **Persistent Storage** - Data survives container restarts
+
+### PCS-Specific Categories
+- 🚚 Moving
+- ✈️ Travel  
+- 🏠 Housing
+- 📦 Storage
+- 🚗 Transportation
+- 🏨 Lodging
+- 🍔 Food
+- 📦 Supplies
+- 🛎️ Services
+- ➕ Custom Categories
+
+## 📸 Screenshots
+
+<details>
+<summary>Click to view screenshots</summary>
+
+### Dashboard
+Interactive analytics with spending trends and category breakdowns.
+
+### Expense Entry
+Simple form with receipt upload and auto-complete fields.
+
+### Settings
+Manage categories, payment methods, and themes.
+
+</details>
+
+## 🚀 Quick Start
+
+### Docker (Recommended)
+
+```bash
+# Pull and run the latest image
+docker run -d \
+  --name pcs-tracker \
+  -p 5001:5001 \
+  -v pcs-data:/app/data \
+  -v pcs-uploads:/app/uploads \
+  tebwritescode/pocket-change-showdown:latest
+
+# Access at http://localhost:5001
+```
+
+### Docker Compose
+
+```bash
+# Clone the repository
+git clone https://github.com/tebwritescode/pocket-change-showdown.git
+cd pocket-change-showdown
+
+# Start with Docker Compose
+docker-compose up -d
+
+# Access at http://localhost:5001
+```
+
+## 📦 Installation
+
+### Docker
+
+#### Multi-Architecture Support
+Images are available for:
+- `linux/amd64` (Intel/AMD)
+- `linux/arm64` (Apple Silicon, ARM servers)
+- `linux/arm/v7` (Raspberry Pi)
+
+```bash
+# Pull specific architecture
+docker pull --platform linux/arm64 tebwritescode/pocket-change-showdown:latest
+
+# Or let Docker auto-select
+docker pull tebwritescode/pocket-change-showdown:latest
+```
+
+#### Docker Run Options
+
+```bash
+# Basic deployment
+docker run -d \
+  --name pcs-tracker \
+  -p 5001:5001 \
+  tebwritescode/pocket-change-showdown:latest
+
+# With persistent storage
+docker run -d \
+  --name pcs-tracker \
+  -p 5001:5001 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/uploads:/app/uploads \
+  tebwritescode/pocket-change-showdown:latest
+
+# With environment variables
+docker run -d \
+  --name pcs-tracker \
+  -p 5001:5001 \
+  -e SECRET_KEY="your-secret-key-here" \
+  -e FLASK_ENV="production" \
+  -v pcs-data:/app/data \
+  -v pcs-uploads:/app/uploads \
+  tebwritescode/pocket-change-showdown:latest
+```
+
+### Kubernetes
+
+```bash
+# Apply all manifests
+kubectl apply -f k8s/
+
+# Or individually
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/secret.yaml
+kubectl apply -f k8s/pvc.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/ingress.yaml  # Optional
+
+# Check deployment status
+kubectl get all -n pcs-tracker
+
+# Access via NodePort (default: 30001)
+http://<node-ip>:30001
+```
+
+#### Kubernetes Features
+- **Persistent Volumes** - Data and uploads stored in PVCs
+- **Health Checks** - Liveness and readiness probes
+- **Resource Limits** - CPU and memory constraints
+- **Multi-Service** - LoadBalancer and NodePort options
+- **Ingress Ready** - Configure for your domain
+
+### Local Development
+
+```bash
+# Clone repository
+git clone https://github.com/tebwritescode/pocket-change-showdown.git
+cd pocket-change-showdown
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run application
+python app.py
+
+# Access at http://localhost:5001
+```
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SECRET_KEY` | Flask secret key for sessions | `pcs-secret-key-2024` |
+| `FLASK_ENV` | Environment mode (`development`/`production`) | `production` |
+| `DATABASE_URL` | SQLAlchemy database URL | `sqlite:///data/pcs_tracker.db` |
+| `MAX_CONTENT_LENGTH` | Maximum upload size in bytes | `16777216` (16MB) |
+
+### Data Persistence
+
+The application stores data in two locations:
+- `/app/data` - SQLite database
+- `/app/uploads` - Receipt images (stored in database as BLOB)
+
+Mount these directories as volumes to persist data.
+
+## 📱 Usage
+
+### Adding Expenses
+
+1. Click **"Add Expense"** from the navigation or homepage
+2. Fill in expense details (only title is truly required)
+3. Upload receipt photo/screenshot (optional)
+4. Save expense
+
+### Importing Data
+
+1. Navigate to **Import/Export** → **Import CSV**
+2. Download the template for correct format
+3. Fill in your data
+4. Upload CSV file
+
+### CSV Format
+
+```csv
+Date,Title,Description,Category,Cost,Payment Method,Location,Vendor,Notes,Tags
+2024-01-15,Moving Truck,U-Haul rental,Moving,299.99,Credit Card,Downtown,U-Haul,26ft truck,moving
+2024-01-16,Hotel Stay,Overnight stay,Lodging,125.00,Company Card,Holiday Inn,Holiday Inn,1 night,travel
+```
+
+### Managing Categories & Payment Methods
+
+1. Go to **Settings**
+2. Add custom categories with colors
+3. Add custom payment methods
+4. Delete non-default items
+5. Change color theme
+
+### Analytics Dashboard
+
+- Filter by time period (Week/Month/Quarter/Year)
+- View spending by category (Doughnut chart)
+- Payment method breakdown (Bar chart)
+- Daily spending trends (Line chart)
+- Top categories table with percentages
+
+## 🔌 API Documentation
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Homepage with statistics |
+| GET | `/expenses` | List all expenses |
+| GET/POST | `/expense/new` | Add new expense |
+| GET/POST | `/expense/<id>/edit` | Edit expense |
+| POST | `/expense/<id>/delete` | Delete expense |
+| GET | `/expense/<id>/receipt` | View receipt image |
+| GET | `/dashboard` | Analytics dashboard |
+| GET | `/api/expense_data` | JSON data for charts |
+| GET/POST | `/settings` | Application settings |
+| POST | `/settings/category/add` | Add category |
+| POST | `/settings/payment/add` | Add payment method |
+| GET | `/export` | Export CSV |
+| GET/POST | `/import` | Import CSV |
+| GET | `/template` | Download CSV template |
+
+### API Response Example
+
+```json
+GET /api/expense_data?period=month
+
+{
+  "categories": {
+    "labels": ["Moving", "Travel", "Housing"],
+    "data": [1250.50, 890.25, 2100.00]
+  },
+  "payment_methods": {
+    "labels": ["Credit Card", "Cash", "Company Card"],
+    "data": [3500.75, 450.00, 290.00]
+  },
+  "daily_trend": {
+    "labels": ["2024-01-01", "2024-01-02"],
+    "data": [125.50, 340.25]
+  }
+}
+```
+
+## 🛠️ Development
+
+### Tech Stack
+
+- **Backend**: Flask 2.3.3, SQLAlchemy
+- **Frontend**: Bootstrap 5, Chart.js, Font Awesome
+- **Database**: SQLite with SQLAlchemy ORM
+- **File Storage**: Binary storage in database
+- **Deployment**: Docker, Kubernetes, Gunicorn
+
+### Project Structure
+
+```
+pocket-change-showdown/
+├── app.py                 # Main Flask application
+├── requirements.txt       # Python dependencies
+├── Dockerfile            # Multi-arch Docker build
+├── docker-compose.yml    # Docker Compose config
+├── templates/            # HTML templates
+│   ├── base.html        # Base template with themes
+│   ├── index.html       # Homepage
+│   ├── expenses.html    # Expense list
+│   ├── expense_form.html # Add/Edit form
+│   ├── dashboard.html   # Analytics
+│   ├── settings.html    # Settings page
+│   └── import.html      # CSV import
+├── k8s/                  # Kubernetes manifests
+│   ├── namespace.yaml
+│   ├── secret.yaml
+│   ├── pvc.yaml
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   └── ingress.yaml
+└── data/                 # Database (created at runtime)
+```
+
+### Building from Source
+
+```bash
+# Build Docker image
+docker build -t pcs-tracker .
+
+# Build multi-arch with buildx
+docker buildx build \
+  --platform linux/amd64,linux/arm64,linux/arm/v7 \
+  -t tebwritescode/pocket-change-showdown:latest \
+  --push .
+```
+
+### Database Schema
+
+```sql
+-- Main expense table
+CREATE TABLE expense (
+    id INTEGER PRIMARY KEY,
+    title VARCHAR(200),
+    description TEXT,
+    category_id INTEGER REFERENCES category(id),
+    cost FLOAT DEFAULT 0.0,
+    payment_method_id INTEGER REFERENCES payment_method(id),
+    date DATE,
+    receipt_image BLOB,
+    receipt_filename VARCHAR(200),
+    location VARCHAR(200),
+    vendor VARCHAR(200),
+    notes TEXT,
+    tags VARCHAR(500),
+    created_at DATETIME,
+    updated_at DATETIME
+);
+
+-- Categories table
+CREATE TABLE category (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    color VARCHAR(7) DEFAULT '#0d6efd',
+    icon VARCHAR(50) DEFAULT 'fa-tag',
+    is_default BOOLEAN DEFAULT FALSE
+);
+
+-- Payment methods table
+CREATE TABLE payment_method (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    icon VARCHAR(50) DEFAULT 'fa-credit-card',
+    is_default BOOLEAN DEFAULT FALSE
+);
+
+-- Settings table
+CREATE TABLE settings (
+    id INTEGER PRIMARY KEY,
+    color_scheme VARCHAR(50) DEFAULT 'default',
+    default_view VARCHAR(20) DEFAULT 'list'
+);
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+### Development Guidelines
+
+- Follow PEP 8 for Python code
+- Use meaningful commit messages
+- Add tests for new features
+- Update documentation as needed
+- Ensure Docker build works on multiple architectures
+
+## 📄 License
+
+This project is open source and available under the [MIT License](LICENSE).
+
+## 🙏 Acknowledgments
+
+- Built with Flask and Bootstrap
+- Charts powered by Chart.js
+- Icons by Font Awesome
+- Inspired by the challenges of military PCS moves
+
+## 📞 Support
+
+For issues, questions, or suggestions:
+- Open an issue on [GitHub](https://github.com/tebwritescode/pocket-change-showdown/issues)
+- Contact via GitHub discussions
+
+---
+
+<div align="center">
+
+Made with ❤️ for the military community
+
+**P**ocket **C**hange **S**howdown - Track every penny, win the move!
+
+</div>

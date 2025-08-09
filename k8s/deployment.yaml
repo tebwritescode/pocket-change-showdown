@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pcs-tracker
+  namespace: pcs-tracker
+  labels:
+    app: pcs-tracker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pcs-tracker
+  template:
+    metadata:
+      labels:
+        app: pcs-tracker
+    spec:
+      containers:
+      - name: pcs-tracker
+        image: tebwritescode/pocket-change-showdown:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5001
+          name: http
+        env:
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pcs-secret
+              key: secret-key
+              optional: true
+        - name: FLASK_ENV
+          value: "production"
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: uploads
+          mountPath: /app/uploads
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5001
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5001
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: pcs-data-pvc
+      - name: uploads
+        persistentVolumeClaim:
+          claimName: pcs-uploads-pvc
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
