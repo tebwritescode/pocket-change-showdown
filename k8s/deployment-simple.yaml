@@ -23,7 +23,7 @@ spec:
         version: v2.0.0
     spec:
       containers:
-      - name: pcs-tracker
+      - name: pocket-change-showdown
         image: tebwritescode/pocket-change-showdown:v2.0.0
         imagePullPolicy: IfNotPresent
         ports:
@@ -46,7 +46,7 @@ spec:
         resources:
           requests:
             memory: "256Mi"
-            cpu: "250m"
+            cpu: "100m"
           limits:
             memory: "512Mi"
             cpu: "500m"
@@ -54,17 +54,17 @@ spec:
           httpGet:
             path: /
             port: 5001
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 30
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /
             port: 5001
-          initialDelaySeconds: 5
+          initialDelaySeconds: 30
           periodSeconds: 10
-          timeoutSeconds: 3
+          timeoutSeconds: 5
           failureThreshold: 3
       volumes:
       - name: data
@@ -73,7 +73,3 @@ spec:
       - name: uploads
         persistentVolumeClaim:
           claimName: pcs-uploads-pvc
-      securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
