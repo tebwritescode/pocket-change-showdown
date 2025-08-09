@@ -26,13 +26,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app.py .
 COPY templates/ templates/
+COPY static/ static/
 
-# Create necessary directories
-RUN mkdir -p data uploads
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/data /app/uploads
 
 # Create non-root user for security
 RUN useradd -m -u 1000 pcsuser && \
-    chown -R pcsuser:pcsuser /app
+    chown -R pcsuser:pcsuser /app && \
+    chmod 755 /app/data /app/uploads
 
 # Switch to non-root user
 USER pcsuser

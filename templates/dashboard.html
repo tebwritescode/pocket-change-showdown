@@ -8,13 +8,16 @@
         <div class="col-lg-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2><i class="fas fa-chart-pie"></i> Analytics Dashboard</h2>
-                <div>
+                <div class="d-flex gap-2 align-items-center">
                     <select id="periodFilter" class="form-select" style="width: auto; display: inline-block;">
                         <option value="week" {% if period == 'week' %}selected{% endif %}>Last 7 Days</option>
                         <option value="month" {% if period == 'month' %}selected{% endif %}>Last 30 Days</option>
                         <option value="quarter" {% if period == 'quarter' %}selected{% endif %}>Last 90 Days</option>
                         <option value="year" {% if period == 'year' %}selected{% endif %}>Last Year</option>
                     </select>
+                    <a href="{{ url_for('report_config') }}" class="btn btn-outline-danger btn-sm">
+                        <i class="fas fa-file-pdf"></i> Generate Report
+                    </a>
                 </div>
             </div>
         </div>
@@ -27,7 +30,7 @@
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="text-muted mb-2">Total Spent</h6>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_expenses) }}</h3>
+                            <h3 class="mb-0">${{ total_expenses|currency }}</h3>
                         </div>
                         <div class="text-primary">
                             <i class="fas fa-dollar-sign fa-2x"></i>
@@ -57,7 +60,7 @@
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="text-muted mb-2">Average Expense</h6>
-                            <h3 class="mb-0">${{ "%.2f"|format(avg_expense) }}</h3>
+                            <h3 class="mb-0">${{ avg_expense|currency }}</h3>
                         </div>
                         <div class="text-info">
                             <i class="fas fa-calculator fa-2x"></i>
@@ -172,7 +175,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             callbacks: {
                                 label: function(context) {
                                     const label = context.label || '';
-                                    const value = '$' + context.parsed.toFixed(2);
+                                    const value = '$' + context.parsed.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                                     const total = context.dataset.data.reduce((a, b) => a + b, 0);
                                     const percentage = ((context.parsed / total) * 100).toFixed(1);
                                     return label + ': ' + value + ' (' + percentage + '%)';
@@ -203,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             beginAtZero: true,
                             ticks: {
                                 callback: function(value) {
-                                    return '$' + value.toFixed(0);
+                                    return '$' + value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
                                 }
                             }
                         }
@@ -215,7 +218,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return '$' + context.parsed.y.toFixed(2);
+                                    return '$' + context.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                                 }
                             }
                         }
@@ -245,7 +248,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             beginAtZero: true,
                             ticks: {
                                 callback: function(value) {
-                                    return '$' + value.toFixed(0);
+                                    return '$' + value.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
                                 }
                             }
                         }
@@ -254,7 +257,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return 'Spent: $' + context.parsed.y.toFixed(2);
+                                    return 'Spent: $' + context.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                                 }
                             }
                         }
@@ -278,7 +281,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     const percentage = ((item.value / total) * 100).toFixed(1);
                     tableHtml += `<tr>
                         <td>${item.label}</td>
-                        <td>$${item.value.toFixed(2)}</td>
+                        <td>$${item.value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td>
                             <div class="progress" style="height: 20px;">
                                 <div class="progress-bar" role="progressbar" style="width: ${percentage}%">${percentage}%</div>

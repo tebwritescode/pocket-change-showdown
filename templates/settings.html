@@ -18,7 +18,6 @@
                 </div>
                 <div class="card-body">
                     <form method="POST" action="{{ url_for('settings_page') }}">
-                        {{ form.csrf_token }}
                         <div class="mb-3">
                             <label for="color_scheme" class="form-label">Color Scheme</label>
                             {{ form.color_scheme(class="form-select", onchange="updateThemePreview(this.value)") }}
@@ -42,7 +41,6 @@
                 </div>
                 <div class="card-body">
                     <form method="POST" action="{{ url_for('add_category') }}" class="mb-3">
-                        {{ csrf_token() }}
                         <div class="input-group">
                             <input type="text" name="name" class="form-control" placeholder="New category name" required>
                             <input type="color" name="color" class="form-control" style="max-width: 60px;" value="#0d6efd">
@@ -65,7 +63,6 @@
                             </div>
                             {% if not category.is_default %}
                             <form method="POST" action="{{ url_for('delete_category', id=category.id) }}" style="display: inline;">
-                                {{ csrf_token() }}
                                 <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this category?');">
                                     <i class="fas fa-trash"></i>
                                 </button>
@@ -87,7 +84,6 @@
                 </div>
                 <div class="card-body">
                     <form method="POST" action="{{ url_for('add_payment_method') }}" class="mb-3">
-                        {{ csrf_token() }}
                         <div class="input-group">
                             <input type="text" name="name" class="form-control" placeholder="New payment method" required>
                             <button type="submit" class="btn btn-primary">
@@ -107,7 +103,6 @@
                             </div>
                             {% if not payment.is_default %}
                             <form method="POST" action="{{ url_for('delete_payment_method', id=payment.id) }}" style="display: inline;">
-                                {{ csrf_token() }}
                                 <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this payment method?');">
                                     <i class="fas fa-trash"></i>
                                 </button>

@@ -8,9 +8,7 @@
         <div class="col-lg-12 text-center">
             <div class="hero-section py-5">
                 <div class="mb-4">
-                    <span class="pcs-letter" style="width: 60px; height: 60px; line-height: 60px; font-size: 1.5rem;">P</span>
-                    <span class="pcs-letter" style="width: 60px; height: 60px; line-height: 60px; font-size: 1.5rem;">C</span>
-                    <span class="pcs-letter" style="width: 60px; height: 60px; line-height: 60px; font-size: 1.5rem;">S</span>
+                    <img src="{{ url_for('send_static', path='img/logo.png') }}" alt="PCS Logo" style="height: 120px;">
                 </div>
                 <h1 class="display-4 mb-3">Pocket Change Showdown</h1>
                 <p class="lead">Track every penny of your PCS move expenses</p>
@@ -33,7 +31,7 @@
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="text-muted mb-2">Total Expenses</h6>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_expenses|default(0)) }}</h3>
+                            <h3 class="mb-0">${{ total_expenses|default(0)|currency }}</h3>
                         </div>
                         <div class="text-primary">
                             <i class="fas fa-dollar-sign fa-2x"></i>
@@ -48,7 +46,7 @@
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="text-muted mb-2">This Month</h6>
-                            <h3 class="mb-0">${{ "%.2f"|format(month_expenses|default(0)) }}</h3>
+                            <h3 class="mb-0">${{ month_expenses|default(0)|currency }}</h3>
                         </div>
                         <div class="text-success">
                             <i class="fas fa-calendar-alt fa-2x"></i>
@@ -122,7 +120,7 @@
                                         <span class="badge bg-secondary">Uncategorized</span>
                                         {% endif %}
                                     </td>
-                                    <td>${{ "%.2f"|format(expense.cost|default(0)) }}</td>
+                                    <td>${{ expense.cost|default(0)|currency }}</td>
                                     <td>
                                         <a href="{{ url_for('edit_expense', id=expense.id) }}" class="btn btn-sm btn-outline-primary">
                                             <i class="fas fa-edit"></i>

@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+
+{% block title %}Generate Report - PCS Tracker{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0"><i class="fas fa-file-pdf text-danger"></i> Generate Custom PDF Report</h4>
+                </div>
+                <div class="card-body">
+                    <form id="reportForm" action="{{ url_for('generate_pdf_report') }}" method="GET">
+                        
+                        <!-- Date Range Section -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0"><i class="fas fa-calendar-alt"></i> Date Range</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label for="start_date" class="form-label">Start Date</label>
+                                        <input type="date" class="form-control" id="start_date" name="start_date" 
+                                               value="{{ default_start_date }}">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="end_date" class="form-label">End Date</label>
+                                        <input type="date" class="form-control" id="end_date" name="end_date" 
+                                               value="{{ default_end_date }}">
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-12">
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button type="button" class="btn btn-outline-primary" onclick="setDateRange('week')">Last Week</button>
+                                            <button type="button" class="btn btn-outline-primary" onclick="setDateRange('month')">Last Month</button>
+                                            <button type="button" class="btn btn-outline-primary" onclick="setDateRange('quarter')">Last Quarter</button>
+                                            <button type="button" class="btn btn-outline-primary" onclick="setDateRange('year')">Last Year</button>
+                                            <button type="button" class="btn btn-outline-primary" onclick="setDateRange('all')">All Time</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filter Section -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0"><i class="fas fa-filter"></i> Filters</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label for="category_id" class="form-label">Category</label>
+                                        <select class="form-select" id="category_id" name="category_id">
+                                            <option value="all">All Categories</option>
+                                            {% for category in categories %}
+                                            <option value="{{ category.id }}">{{ category.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="payment_method_id" class="form-label">Payment Method</label>
+                                        <select class="form-select" id="payment_method_id" name="payment_method_id">
+                                            <option value="all">All Payment Methods</option>
+                                            {% for payment in payment_methods %}
+                                            <option value="{{ payment.id }}">{{ payment.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <label for="min_amount" class="form-label">Minimum Amount ($)</label>
+                                        <input type="number" class="form-control" id="min_amount" name="min_amount" 
+                                               step="0.01" min="0" placeholder="0.00">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="max_amount" class="form-label">Maximum Amount ($)</label>
+                                        <input type="number" class="form-control" id="max_amount" name="max_amount" 
+                                               step="0.01" min="0" placeholder="No limit">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Content Selection -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0"><i class="fas fa-check-square"></i> Report Contents</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6 class="text-muted mb-3">Summary Elements</h6>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_summary" 
+                                                   name="include_summary" checked>
+                                            <label class="form-check-label" for="include_summary">
+                                                <i class="fas fa-chart-bar"></i> Summary Statistics
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_category_breakdown" 
+                                                   name="include_category_breakdown" checked>
+                                            <label class="form-check-label" for="include_category_breakdown">
+                                                <i class="fas fa-tags"></i> Category Breakdown
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_payment_breakdown" 
+                                                   name="include_payment_breakdown" checked>
+                                            <label class="form-check-label" for="include_payment_breakdown">
+                                                <i class="fas fa-credit-card"></i> Payment Method Breakdown
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_monthly_trend" 
+                                                   name="include_monthly_trend" checked>
+                                            <label class="form-check-label" for="include_monthly_trend">
+                                                <i class="fas fa-chart-line"></i> Monthly Spending Trend
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="text-muted mb-3">Charts & Graphs</h6>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_pie_chart" 
+                                                   name="include_pie_chart" checked>
+                                            <label class="form-check-label" for="include_pie_chart">
+                                                <i class="fas fa-chart-pie"></i> Category Pie Chart
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_bar_chart" 
+                                                   name="include_bar_chart" checked>
+                                            <label class="form-check-label" for="include_bar_chart">
+                                                <i class="fas fa-chart-column"></i> Payment Method Bar Chart
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_trend_chart" 
+                                                   name="include_trend_chart" checked>
+                                            <label class="form-check-label" for="include_trend_chart">
+                                                <i class="fas fa-chart-area"></i> Spending Trend Chart
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <hr class="my-3">
+                                <div class="row">
+                                    <div class="col-12">
+                                        <h6 class="text-muted mb-3">Detailed Data</h6>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_expense_table" 
+                                                   name="include_expense_table" checked>
+                                            <label class="form-check-label" for="include_expense_table">
+                                                <i class="fas fa-table"></i> Detailed Expense Table
+                                            </label>
+                                        </div>
+                                        <div class="form-check ms-4">
+                                            <input class="form-check-input" type="checkbox" id="include_descriptions" 
+                                                   name="include_descriptions">
+                                            <label class="form-check-label" for="include_descriptions">
+                                                Include descriptions in table
+                                            </label>
+                                        </div>
+                                        <div class="form-check ms-4">
+                                            <input class="form-check-input" type="checkbox" id="include_notes" 
+                                                   name="include_notes">
+                                            <label class="form-check-label" for="include_notes">
+                                                Include notes in table
+                                            </label>
+                                        </div>
+                                        <div class="form-check ms-4">
+                                            <input class="form-check-input" type="checkbox" id="include_locations" 
+                                                   name="include_locations">
+                                            <label class="form-check-label" for="include_locations">
+                                                Include locations/vendors in table
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Report Options -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0"><i class="fas fa-cog"></i> Report Options</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label for="report_title" class="form-label">Custom Report Title</label>
+                                        <input type="text" class="form-control" id="report_title" name="report_title" 
+                                               placeholder="PCS Expense Report" value="PCS Expense Report">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="page_size" class="form-label">Page Size</label>
+                                        <select class="form-select" id="page_size" name="page_size">
+                                            <option value="letter" selected>Letter (8.5" x 11")</option>
+                                            <option value="a4">A4</option>
+                                            <option value="legal">Legal (8.5" x 14")</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_logo" 
+                                                   name="include_logo" checked>
+                                            <label class="form-check-label" for="include_logo">
+                                                Include PCS logo
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="include_page_numbers" 
+                                                   name="include_page_numbers" checked>
+                                            <label class="form-check-label" for="include_page_numbers">
+                                                Include page numbers
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Generate Button -->
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-danger btn-lg">
+                                <i class="fas fa-file-pdf"></i> Generate PDF Report
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="selectAll(true)">
+                                <i class="fas fa-check-double"></i> Select All
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="selectAll(false)">
+                                <i class="fas fa-times"></i> Deselect All
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function setDateRange(range) {
+    const today = new Date();
+    let startDate = new Date();
+    let endDate = today;
+    
+    switch(range) {
+        case 'week':
+            startDate.setDate(today.getDate() - 7);
+            break;
+        case 'month':
+            startDate.setMonth(today.getMonth() - 1);
+            break;
+        case 'quarter':
+            startDate.setMonth(today.getMonth() - 3);
+            break;
+        case 'year':
+            startDate.setFullYear(today.getFullYear() - 1);
+            break;
+        case 'all':
+            startDate = new Date('2000-01-01');
+            break;
+    }
+    
+    document.getElementById('start_date').value = startDate.toISOString().split('T')[0];
+    document.getElementById('end_date').value = endDate.toISOString().split('T')[0];
+}
+
+function selectAll(checked) {
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = checked;
+    });
+}
+
+// Enable/disable sub-options based on main checkbox
+document.getElementById('include_expense_table').addEventListener('change', function() {
+    const subOptions = ['include_descriptions', 'include_notes', 'include_locations'];
+    subOptions.forEach(id => {
+        const checkbox = document.getElementById(id);
+        checkbox.disabled = !this.checked;
+        if (!this.checked) checkbox.checked = false;
+    });
+});
+</script>
+{% endblock %}

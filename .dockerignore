@@ -81,6 +81,8 @@ uploads/
 *.db
 *.sqlite
 *.sqlite3
+# But don't ignore static folder
+!static/
 
 # Documentation
 *.md

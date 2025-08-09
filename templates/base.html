@@ -193,11 +193,9 @@
 <body data-theme="{{ settings.color_scheme if settings else 'default' }}">
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container-fluid">
-            <a class="navbar-brand pcs-logo" href="{{ url_for('index') }}">
-                <span class="pcs-letter">P</span>
-                <span class="pcs-letter">C</span>
-                <span class="pcs-letter">S</span>
-                <span class="ms-2">Tracker</span>
+            <a class="navbar-brand pcs-logo d-flex align-items-center" href="{{ url_for('index') }}">
+                <img src="{{ url_for('send_static', path='img/logo.png') }}" alt="PCS Logo" height="40" class="me-2">
+                <span>Tracker</span>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -268,11 +266,9 @@
 
     <footer class="footer mt-5">
         <div class="container text-center">
-            <p class="mb-0">
-                <span class="pcs-letter">P</span>
-                <span class="pcs-letter">C</span>
-                <span class="pcs-letter">S</span>
-                - Pocket Change Showdown Tracker &copy; 2024
+            <p class="mb-0 d-flex align-items-center justify-content-center">
+                <img src="{{ url_for('send_static', path='img/logo.png') }}" alt="PCS Logo" height="30" class="me-2">
+                <span>Pocket Change Showdown Tracker &copy; 2025</span>
             </p>
         </div>
     </footer>

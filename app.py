@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import FlaskForm
+from wtforms.csrf.core import CSRF
 from wtforms import StringField, TextAreaField, FloatField, SelectField, FileField, DateField, HiddenField, FieldList, FormField
 from wtforms.validators import Optional, ValidationError
 from werkzeug.utils import secure_filename
@@ -12,10 +13,28 @@ import base64
 import json
 from collections import defaultdict
 import csv
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4, legal
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.linecharts import HorizontalLineChart
+from reportlab.graphics import renderPDF
+from PIL import Image as PILImage
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'pcs-showdown-secret-key-2024')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data/pcs_tracker.db'
+# Use absolute path for database
+basedir = os.path.abspath(os.path.dirname(__file__))
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(basedir, "data", "pcs_tracker.db")}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -102,7 +121,11 @@ class Expense(db.Model):
         self.custom_data = json.dumps(data)
 
 # Forms
-class ExpenseForm(FlaskForm):
+class BaseForm(FlaskForm):
+    class Meta:
+        csrf = False
+
+class ExpenseForm(BaseForm):
     title = StringField('Title', validators=[Optional()])
     description = TextAreaField('Description', validators=[Optional()])
     category_id = SelectField('Category', coerce=int, validators=[Optional()])
@@ -115,17 +138,17 @@ class ExpenseForm(FlaskForm):
     notes = TextAreaField('Notes', validators=[Optional()])
     tags = StringField('Tags (comma-separated)', validators=[Optional()])
 
-class CategoryForm(FlaskForm):
+class CategoryForm(BaseForm):
     name = StringField('Category Name')
     description = StringField('Description', validators=[Optional()])
     color = StringField('Color', default='#0d6efd', validators=[Optional()])
     icon = StringField('Icon Class', default='fa-tag', validators=[Optional()])
 
-class PaymentMethodForm(FlaskForm):
+class PaymentMethodForm(BaseForm):
     name = StringField('Payment Method')
     icon = StringField('Icon Class', default='fa-credit-card', validators=[Optional()])
 
-class SettingsForm(FlaskForm):
+class SettingsForm(BaseForm):
     color_scheme = SelectField('Color Scheme', choices=[
         ('default', 'Default Blue'),
         ('dark', 'Dark Theme'),
@@ -200,6 +223,16 @@ def init_defaults():
     
     db.session.commit()
 
+# Custom template filters
+@app.template_filter('currency')
+def currency_filter(value):
+    """Format a number as currency with commas and 2 decimal places"""
+    try:
+        value = float(value or 0)
+        return "{:,.2f}".format(value)
+    except (ValueError, TypeError):
+        return "0.00"
+
 # Template context functions
 @app.context_processor
 def inject_helper_functions():
@@ -220,6 +253,11 @@ def inject_helper_functions():
         get_monthly_total=get_monthly_total,
         get_expense_count=get_expense_count
     )
+
+# Static file serving
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
 
 # Routes
 @app.route('/')
@@ -668,17 +706,262 @@ def download_template():
         download_name='pcs_import_template.csv'
     )
 
+@app.route('/report/config')
+def report_config():
+    """Show report configuration page"""
+    categories = Category.query.order_by(Category.name).all()
+    payment_methods = PaymentMethod.query.order_by(PaymentMethod.name).all()
+    
+    # Default date range (last 30 days)
+    default_end_date = datetime.today().date()
+    default_start_date = (datetime.today() - timedelta(days=30)).date()
+    
+    return render_template('report_config.html',
+                          categories=categories,
+                          payment_methods=payment_methods,
+                          default_start_date=default_start_date,
+                          default_end_date=default_end_date)
+
+@app.route('/report/pdf')
+def generate_pdf_report():
+    """Generate a PDF report of expenses with PCS branding"""
+    # Get filter parameters
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    category_id = request.args.get('category_id')
+    payment_method_id = request.args.get('payment_method_id')
+    min_amount = request.args.get('min_amount')
+    max_amount = request.args.get('max_amount')
+    
+    # Get content options
+    include_summary = request.args.get('include_summary') == 'on'
+    include_category_breakdown = request.args.get('include_category_breakdown') == 'on'
+    include_payment_breakdown = request.args.get('include_payment_breakdown') == 'on'
+    include_monthly_trend = request.args.get('include_monthly_trend') == 'on'
+    include_pie_chart = request.args.get('include_pie_chart') == 'on'
+    include_bar_chart = request.args.get('include_bar_chart') == 'on'
+    include_trend_chart = request.args.get('include_trend_chart') == 'on'
+    include_expense_table = request.args.get('include_expense_table') == 'on'
+    include_descriptions = request.args.get('include_descriptions') == 'on'
+    include_notes = request.args.get('include_notes') == 'on'
+    include_locations = request.args.get('include_locations') == 'on'
+    
+    # Get report options
+    report_title = request.args.get('report_title', 'PCS Expense Report')
+    page_size_str = request.args.get('page_size', 'letter')
+    include_logo = request.args.get('include_logo') == 'on'
+    include_page_numbers = request.args.get('include_page_numbers') == 'on'
+    
+    # Build query
+    query = Expense.query
+    
+    if start_date:
+        query = query.filter(Expense.date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+    if end_date:
+        query = query.filter(Expense.date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+    if category_id and category_id != 'all':
+        query = query.filter(Expense.category_id == int(category_id))
+    if payment_method_id and payment_method_id != 'all':
+        query = query.filter(Expense.payment_method_id == int(payment_method_id))
+    if min_amount:
+        query = query.filter(Expense.cost >= float(min_amount))
+    if max_amount:
+        query = query.filter(Expense.cost <= float(max_amount))
+    
+    expenses = query.order_by(Expense.date.desc()).all()
+    
+    # Create PDF buffer
+    buffer = io.BytesIO()
+    
+    # Determine page size
+    if page_size_str == 'a4':
+        page_size = A4
+    elif page_size_str == 'legal':
+        page_size = legal
+    else:
+        page_size = letter
+    
+    # Create the PDF document
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=page_size,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72
+    )
+    
+    # Container for the 'Flowable' objects
+    elements = []
+    
+    # Define styles
+    styles = getSampleStyleSheet()
+    
+    # Custom styles with PCS branding colors
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#0d6efd'),
+        alignment=TA_CENTER,
+        spaceAfter=30
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#0d6efd'),
+        spaceAfter=12
+    )
+    
+    normal_style = styles['Normal']
+    
+    # Add logo if requested
+    if include_logo:
+        logo_path = os.path.join(os.path.dirname(__file__), 'static', 'img', 'logo.png')
+        if os.path.exists(logo_path):
+            logo = Image(logo_path, width=2*inch, height=0.67*inch)  # Maintain aspect ratio
+            logo.hAlign = 'CENTER'
+            elements.append(logo)
+            elements.append(Spacer(1, 0.5*inch))
+    
+    # Add title
+    elements.append(Paragraph(report_title, title_style))
+    elements.append(Paragraph("Expense Report", heading_style))
+    elements.append(Spacer(1, 0.25*inch))
+    
+    # Add report metadata
+    metadata_style = ParagraphStyle(
+        'Metadata',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.HexColor('#6c757d')
+    )
+    
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", metadata_style))
+    elements.append(Paragraph(f"Total Expenses: {len(expenses)}", metadata_style))
+    elements.append(Paragraph(f"Total Amount: ${sum(e.cost or 0 for e in expenses):,.2f}", metadata_style))
+    elements.append(Spacer(1, 0.5*inch))
+    
+    # Create summary statistics table if requested
+    if include_summary:
+        summary_data = [
+            ['Summary Statistics', ''],
+            ['Total Expenses:', f"${sum(e.cost or 0 for e in expenses):,.2f}"],
+            ['Number of Transactions:', str(len(expenses))],
+            ['Average Expense:', f"${(sum(e.cost or 0 for e in expenses) / len(expenses) if expenses else 0):,.2f}"],
+            ['Highest Expense:', f"${max((e.cost or 0 for e in expenses), default=0):,.2f}"],
+            ['Lowest Expense:', f"${min((e.cost or 0 for e in expenses), default=0):,.2f}"]
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        
+        elements.append(summary_table)
+        elements.append(Spacer(1, 0.5*inch))
+    
+    # Category breakdown
+    category_totals = defaultdict(float)
+    for expense in expenses:
+        category_name = expense.category.name if expense.category else 'Uncategorized'
+        category_totals[category_name] += expense.cost or 0
+    
+    if category_totals:
+        elements.append(Paragraph("Expenses by Category", heading_style))
+        category_data = [['Category', 'Amount', 'Percentage']]
+        total = sum(category_totals.values())
+        for cat, amount in sorted(category_totals.items(), key=lambda x: x[1], reverse=True):
+            percentage = (amount / total * 100) if total > 0 else 0
+            category_data.append([cat, f"${amount:,.2f}", f"{percentage:.1f}%"])
+        
+        category_table = Table(category_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch])
+        category_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        elements.append(category_table)
+        elements.append(PageBreak())
+    
+    # Detailed expense list
+    elements.append(Paragraph("Detailed Expense List", heading_style))
+    
+    # Create expense table
+    expense_data = [['Date', 'Title', 'Category', 'Amount', 'Payment']]
+    
+    for expense in expenses:
+        date_str = expense.date.strftime('%m/%d/%Y') if expense.date else 'N/A'
+        title = (expense.title or 'Untitled')[:30]
+        category = expense.category.name if expense.category else 'N/A'
+        amount = f"${expense.cost:,.2f}" if expense.cost else '$0.00'
+        payment = expense.payment_method.name if expense.payment_method else 'N/A'
+        expense_data.append([date_str, title, category, amount, payment])
+    
+    expense_table = Table(expense_data, colWidths=[1.2*inch, 2.3*inch, 1.5*inch, 1*inch, 1.5*inch])
+    expense_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (3, 1), (3, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+    ]))
+    
+    elements.append(expense_table)
+    
+    # Build PDF
+    doc.build(elements)
+    
+    # Rewind the buffer
+    buffer.seek(0)
+    
+    # Generate filename with timestamp
+    filename = f"pcs_expense_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    
+    return send_file(
+        buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename
+    )
+
 @app.errorhandler(413)
 def too_large(e):
     flash('File is too large. Maximum size is 16MB.', 'danger')
     return redirect(url_for('new_expense'))
 
-# Create tables and initialize data
-with app.app_context():
-    os.makedirs('data', exist_ok=True)
-    os.makedirs('uploads', exist_ok=True)
-    db.create_all()
-    init_defaults()
+def initialize_app():
+    """Initialize the application, create directories and database"""
+    # Create directories before database initialization
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    os.makedirs(os.path.join(basedir, 'data'), exist_ok=True)
+    os.makedirs(os.path.join(basedir, 'uploads'), exist_ok=True)
+    
+    # Create tables and initialize data
+    with app.app_context():
+        db.create_all()
+        init_defaults()
+
+# Initialize on import for gunicorn
+initialize_app()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
