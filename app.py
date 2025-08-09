@@ -29,6 +29,7 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 from io import BytesIO
+from pdf_utils import create_pie_chart, create_bar_chart, create_trend_chart, calculate_monthly_breakdown
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'pcs-showdown-secret-key-2024')
@@ -870,13 +871,19 @@ def generate_pdf_report():
         elements.append(summary_table)
         elements.append(Spacer(1, 0.5*inch))
     
-    # Category breakdown
+    # Calculate totals for various breakdowns
     category_totals = defaultdict(float)
+    payment_totals = defaultdict(float)
+    
     for expense in expenses:
         category_name = expense.category.name if expense.category else 'Uncategorized'
         category_totals[category_name] += expense.cost or 0
+        
+        payment_name = expense.payment_method.name if expense.payment_method else 'Unknown'
+        payment_totals[payment_name] += expense.cost or 0
     
-    if category_totals:
+    # Category breakdown table
+    if include_category_breakdown and category_totals:
         elements.append(Paragraph("Expenses by Category", heading_style))
         category_data = [['Category', 'Amount', 'Percentage']]
         total = sum(category_totals.values())
@@ -896,36 +903,171 @@ def generate_pdf_report():
             ('GRID', (0, 0), (-1, -1), 1, colors.grey)
         ]))
         elements.append(category_table)
+        elements.append(Spacer(1, 0.5*inch))
+    
+    # Payment method breakdown table
+    if include_payment_breakdown and payment_totals:
+        elements.append(Paragraph("Payment Method Breakdown", heading_style))
+        payment_data = [['Payment Method', 'Amount', 'Percentage']]
+        total = sum(payment_totals.values())
+        for method, amount in sorted(payment_totals.items(), key=lambda x: x[1], reverse=True):
+            percentage = (amount / total * 100) if total > 0 else 0
+            payment_data.append([method, f"${amount:,.2f}", f"{percentage:.1f}%"])
+        
+        payment_table = Table(payment_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch])
+        payment_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#17a2b8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        elements.append(payment_table)
+        elements.append(Spacer(1, 0.5*inch))
+    
+    # Monthly trend table
+    if include_monthly_trend:
+        monthly_data = calculate_monthly_breakdown(expenses)
+        if monthly_data:
+            elements.append(Paragraph("Monthly Spending Breakdown", heading_style))
+            monthly_table_data = [['Month', 'Total Spent']]
+            for month, amount in sorted(monthly_data.items()):
+                monthly_table_data.append([month, f"${amount:,.2f}"])
+            
+            monthly_table = Table(monthly_table_data, colWidths=[3*inch, 2*inch])
+            monthly_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#28a745')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+            ]))
+            elements.append(monthly_table)
+            elements.append(Spacer(1, 0.5*inch))
+    
+    # Add page break before charts if we have any
+    if (include_pie_chart or include_bar_chart or include_trend_chart) and (include_summary or include_category_breakdown or include_payment_breakdown or include_monthly_trend):
+        elements.append(PageBreak())
+    
+    # Charts section
+    if include_pie_chart or include_bar_chart or include_trend_chart:
+        elements.append(Paragraph("Visual Analytics", heading_style))
+        elements.append(Spacer(1, 0.25*inch))
+    
+    # Category pie chart
+    if include_pie_chart and category_totals:
+        pie_chart = create_pie_chart(dict(category_totals), "Expense Categories")
+        if pie_chart:
+            elements.append(pie_chart)
+            elements.append(Spacer(1, 0.5*inch))
+    
+    # Payment method bar chart
+    if include_bar_chart and payment_totals:
+        bar_chart = create_bar_chart(dict(payment_totals), "Payment Methods Used")
+        if bar_chart:
+            elements.append(bar_chart)
+            elements.append(Spacer(1, 0.5*inch))
+    
+    # Spending trend chart
+    if include_trend_chart and expenses:
+        trend_chart = create_trend_chart(expenses, "Monthly Spending Trend")
+        if trend_chart:
+            elements.append(trend_chart)
+            elements.append(Spacer(1, 0.5*inch))
+    
+    # Add page break before expense table if we have charts
+    if (include_pie_chart or include_bar_chart or include_trend_chart) and include_expense_table:
         elements.append(PageBreak())
     
     # Detailed expense list
-    elements.append(Paragraph("Detailed Expense List", heading_style))
-    
-    # Create expense table
-    expense_data = [['Date', 'Title', 'Category', 'Amount', 'Payment']]
-    
-    for expense in expenses:
-        date_str = expense.date.strftime('%m/%d/%Y') if expense.date else 'N/A'
-        title = (expense.title or 'Untitled')[:30]
-        category = expense.category.name if expense.category else 'N/A'
-        amount = f"${expense.cost:,.2f}" if expense.cost else '$0.00'
-        payment = expense.payment_method.name if expense.payment_method else 'N/A'
-        expense_data.append([date_str, title, category, amount, payment])
-    
-    expense_table = Table(expense_data, colWidths=[1.2*inch, 2.3*inch, 1.5*inch, 1*inch, 1.5*inch])
-    expense_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('ALIGN', (3, 1), (3, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
-        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
-    ]))
-    
-    elements.append(expense_table)
+    if include_expense_table and expenses:
+        elements.append(Paragraph("Detailed Expense List", heading_style))
+        
+        # Build column headers based on selected options
+        headers = ['Date', 'Title']
+        col_widths = [1*inch, 1.8*inch]
+        
+        if include_descriptions:
+            headers.append('Description')
+            col_widths.append(1.5*inch)
+        
+        headers.append('Category')
+        col_widths.append(1.2*inch)
+        headers.append('Amount')
+        col_widths.append(0.9*inch)
+        headers.append('Payment')
+        col_widths.append(1.1*inch)
+        
+        if include_locations:
+            headers.append('Location/Vendor')
+            col_widths.append(1.3*inch)
+        
+        if include_notes:
+            headers.append('Notes')
+            col_widths.append(1.5*inch)
+        
+        # Adjust column widths to fit page
+        total_width = sum(col_widths)
+        if total_width > 7.5*inch:
+            scale_factor = 7.5*inch / total_width
+            col_widths = [w * scale_factor for w in col_widths]
+        
+        expense_data = [headers]
+        
+        for expense in expenses:
+            row = [
+                expense.date.strftime('%m/%d/%Y') if expense.date else 'N/A',
+                (expense.title or 'Untitled')[:30]
+            ]
+            
+            if include_descriptions:
+                desc = (expense.description or '')[:40]
+                if len(expense.description or '') > 40:
+                    desc += '...'
+                row.append(desc)
+            
+            row.append(expense.category.name if expense.category else 'N/A')
+            row.append(f"${expense.cost:,.2f}" if expense.cost else '$0.00')
+            row.append(expense.payment_method.name[:15] if expense.payment_method else 'N/A')
+            
+            if include_locations:
+                location = expense.location or expense.vendor or 'N/A'
+                row.append(location[:20])
+            
+            if include_notes:
+                notes = (expense.notes or '')[:30]
+                if len(expense.notes or '') > 30:
+                    notes += '...'
+                row.append(notes)
+            
+            expense_data.append(row)
+        
+        expense_table = Table(expense_data, colWidths=col_widths)
+        expense_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        
+        # Find amount column and right-align it
+        amount_col = headers.index('Amount')
+        expense_table.setStyle(TableStyle([
+            ('ALIGN', (amount_col, 1), (amount_col, -1), 'RIGHT'),
+        ]))
+        
+        elements.append(expense_table)
     
     # Build PDF
     doc.build(elements)
