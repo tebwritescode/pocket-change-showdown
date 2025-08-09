@@ -396,24 +396,6 @@ CREATE TABLE settings (
 );
 ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow PEP 8 for Python code
-- Use meaningful commit messages
-- Add tests for new features
-- Update documentation as needed
-- Ensure Docker build works on multiple architectures
-
 ## 📄 License
 
 This project is open source and available under the [MIT License](LICENSE).
@@ -423,7 +405,6 @@ This project is open source and available under the [MIT License](LICENSE).
 - Built with Flask and Bootstrap
 - Charts powered by Chart.js
 - Icons by Font Awesome
-- Inspired by the challenges of military PCS moves
 
 ## 📞 Support
 
@@ -434,8 +415,6 @@ For issues, questions, or suggestions:
 ---
 
 <div align="center">
-
-Made with ❤️ for the military community
 
 **P**ocket **C**hange **S**howdown - Track every penny, win the move!
 
