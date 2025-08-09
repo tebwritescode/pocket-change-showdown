@@ -1,4 +1,4 @@
-# 🎯 PCS Tracker - Pocket Change Showdown
+# Pocket Change Showdown
 
 <div align="center">
 
@@ -7,7 +7,7 @@
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)
 
-Track every penny of your PCS (Permanent Change of Station) move expenses with style! 💰
+Track every penny of your moving expenses with style! 💰
 
 [Features](#features) • [Quick Start](#quick-start) • [Installation](#installation) • [Documentation](#documentation) • [Contributing](#contributing)
 
