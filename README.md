@@ -4,7 +4,7 @@
 
 <div align="center">
 
-![PCS Logo](https://teb.codes/2-Code/Flask/Pcs/logo.png)
+<img src="https://teb.codes/2-Code/Flask/Pcs/logo.png" alt=lgoo width=150px></img>
 
 
 ![Flask](https://img.shields.io/badge/Flask-2.3.3-000000?style=for-the-badge&logo=flask)
@@ -78,6 +78,9 @@ Simple form with receipt upload and auto-complete fields.
 Manage categories, payment methods, and themes.
 
 </details>
+
+### Sample PDF
+[pdf_sample.pdf](https://teb.codes/2-Code/Flask/Pcs/pdf_sample.pdf)
 
 ## 🚀 Quick Start
 
