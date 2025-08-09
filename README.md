@@ -4,7 +4,7 @@
 
 <div align="center">
 
-![PCS Logo](https://img.shields.io/badge/P-C-S-0d6efd?style=for-the-badge&labelColor=0d6efd&color=0d6efd)
+![PCS Logo](https://teb.codes/2-Code/Flask/Pcs/logo.png)
 
 
 ![Flask](https://img.shields.io/badge/Flask-2.3.3-000000?style=for-the-badge&logo=flask)
@@ -409,16 +409,12 @@ This project is open source and available under the [MIT License](LICENSE).
 - Charts powered by Chart.js
 - Icons by Font Awesome
 
-## 📞 Support
+## Support
 
-For issues, questions, or suggestions:
-- Open an issue on [GitHub](https://github.com/tebwritescode/pocket-change-showdown/issues)
-- Contact via GitHub discussions
+Issues? Questions? Praise-singing?  
+File an issue on GitHub or yell at [teb](https://github.com/tebwritescode).
 
 ---
-
-<div align="center">
-
-**P**ocket **C**hange **S**howdown - Track every penny, win the move!
-
-</div>
+👑 Created by: [tebbydog0605](https://github.com/tebwritescode)  
+🐋 Docker Hub: [tebwritescode](https://hub.docker.com/u/tebwritescode)  
+💻 Website: [teb.codes](https://teb.codes)
