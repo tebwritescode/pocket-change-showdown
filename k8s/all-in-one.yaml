@@ -70,11 +70,11 @@ spec:
     metadata:
       labels:
         app: pocket-change-showdown
-        version: v2.0.0
+        version: v2.1.0
     spec:
       containers:
       - name: pcs-tracker
-        image: tebwritescode/pocket-change-showdown:v2.0.0
+        image: tebwritescode/pcs-tracker:v2.1.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5001
