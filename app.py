@@ -83,6 +83,8 @@ class Settings(db.Model):
     categories = db.Column(db.Text, default='[]')
     payment_methods = db.Column(db.Text, default='[]')
     custom_fields = db.Column(db.Text, default='{}')
+    db_version = db.Column(db.String(20), default='2.0.0')  # Track database schema version
+    app_version = db.Column(db.String(20), default='2.1.0')  # Track app version that last updated DB
     
     def get_categories(self):
         try:
@@ -1476,15 +1478,26 @@ def too_large(e):
 
 def initialize_app():
     """Initialize the application, create directories and database"""
+    # Import here to avoid circular dependencies
+    from db_init import run_auto_migration, initialize_database
+    
     # Create directories before database initialization
     basedir = os.path.abspath(os.path.dirname(__file__))
     os.makedirs(os.path.join(basedir, 'data'), exist_ok=True)
     os.makedirs(os.path.join(basedir, 'uploads'), exist_ok=True)
     
+    # Run automatic database migration first
+    print("Starting automatic database migration...")
+    if run_auto_migration():
+        print("Database migration completed successfully")
+    else:
+        print("Warning: Database migration encountered issues")
+    
     # Create tables and initialize data
     with app.app_context():
         db.create_all()
-        init_defaults()
+        # Use db_init's initialization which includes version tracking
+        initialize_database(app, db)
 
 # Initialize on import for gunicorn
 initialize_app()
