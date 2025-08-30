@@ -79,3 +79,4 @@ This is a Flask-based web application for tracking PCS (Permanent Change of Stat
    - Use clear, descriptive commit messages
    - Format: "Add PDF export functionality" or "Fix expense calculation bug"
    - Include version information when appropriate: "Release v2.0.1 with bug fixes"
+- never just accept errors, any errors found need to be corrected before pushing

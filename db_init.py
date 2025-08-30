@@ -187,13 +187,17 @@ def initialize_database(app, db):
     
     with app.app_context():
         # Create all tables
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception as e:
+            print(f"Warning: Error creating tables: {e}")
+            # Tables might already exist
         
         # Check if we need to add default data
         try:
             category_count = Category.query.count()
-        except Exception:
-            # Table might not exist yet
+        except Exception as e:
+            print(f"Warning: Error querying categories: {e}")
             category_count = 0
             
         if category_count == 0:
@@ -211,11 +215,15 @@ def initialize_database(app, db):
                 {'name': 'Miscellaneous', 'color': '#6c757d', 'icon': 'fa-tag', 'description': 'Other PCS-related expenses'}
             ]
             
-            for cat_data in default_categories:
-                category = Category(**cat_data)
-                db.session.add(category)
-            db.session.commit()
-            print("✓ Default categories created")
+            try:
+                for cat_data in default_categories:
+                    category = Category(**cat_data)
+                    db.session.add(category)
+                db.session.commit()
+                print("✓ Default categories created")
+            except Exception as e:
+                db.session.rollback()
+                print(f"Warning: Categories might already exist: {e}")
         
         try:
             payment_method_count = PaymentMethod.query.count()
@@ -234,54 +242,70 @@ def initialize_database(app, db):
                 {'name': 'Other', 'icon': 'fa-question-circle'}
             ]
             
-            for method_data in default_methods:
-                method = PaymentMethod(**method_data)
-                db.session.add(method)
-            db.session.commit()
-            print("✓ Default payment methods created")
+            try:
+                for method_data in default_methods:
+                    method = PaymentMethod(**method_data)
+                    db.session.add(method)
+                db.session.commit()
+                print("✓ Default payment methods created")
+            except Exception as e:
+                db.session.rollback()
+                print(f"Warning: Payment methods might already exist: {e}")
         
         # Ensure default dashboard preset exists
-        if not DashboardPreset.query.filter_by(is_default=True).first():
-            if DashboardPreset.query.count() == 0:
-                print("Creating default dashboard preset...")
-                preset = DashboardPreset(
-                    name='Default Dashboard',
-                    is_default=True,
-                    config='{"widgets": [{"type": "category-pie", "title": "Expenses by Category", "size": "medium"}, {"type": "trend-line", "title": "Spending Trend", "size": "large"}, {"type": "total-spent", "title": "Total Spent", "size": "small"}, {"type": "reimbursable-amount", "title": "Reimbursable Amount", "size": "small"}], "layout": "grid"}',
-                    filters='{"period": "month"}'
-                )
-                db.session.add(preset)
-                db.session.commit()
-                print("✓ Default dashboard preset created")
+        try:
+            if not DashboardPreset.query.filter_by(is_default=True).first():
+                if DashboardPreset.query.count() == 0:
+                    print("Creating default dashboard preset...")
+                    preset = DashboardPreset(
+                        name='Default Dashboard',
+                        is_default=True,
+                        config='{"widgets": [{"type": "category-pie", "title": "Expenses by Category", "size": "medium"}, {"type": "trend-line", "title": "Spending Trend", "size": "large"}, {"type": "total-spent", "title": "Total Spent", "size": "small"}, {"type": "reimbursable-amount", "title": "Reimbursable Amount", "size": "small"}], "layout": "grid"}',
+                        filters='{"period": "month"}'
+                    )
+                    db.session.add(preset)
+                    db.session.commit()
+                    print("✓ Default dashboard preset created")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Warning: Dashboard preset might already exist: {e}")
         
         # Ensure homepage config exists
-        if HomepageConfig.query.count() == 0:
-            print("Creating default homepage configuration...")
-            config = HomepageConfig(
-                sections='{"hero": {"visible": true, "order": 1}, "stats": {"visible": true, "order": 2}, "recent_expenses": {"visible": true, "order": 3}, "quick_actions": {"visible": true, "order": 4}, "tips": {"visible": true, "order": 5}}',
-                hero_settings='{"title": "Pocket Change Showdown", "subtitle": "Track every penny of your PCS move expenses", "show_logo": true}',
-                table_columns='{"recent_expenses": ["date", "title", "category", "amount", "reimbursable"]}',
-                widget_layout='2-column'
-            )
-            db.session.add(config)
-            db.session.commit()
-            print("✓ Default homepage configuration created")
+        try:
+            if HomepageConfig.query.count() == 0:
+                print("Creating default homepage configuration...")
+                config = HomepageConfig(
+                    sections='{"hero": {"visible": true, "order": 1}, "stats": {"visible": true, "order": 2}, "recent_expenses": {"visible": true, "order": 3}, "quick_actions": {"visible": true, "order": 4}, "tips": {"visible": true, "order": 5}}',
+                    hero_settings='{"title": "Pocket Change Showdown", "subtitle": "Track every penny of your PCS move expenses", "show_logo": true}',
+                    table_columns='{"recent_expenses": ["date", "title", "category", "amount", "reimbursable"]}',
+                    widget_layout='2-column'
+                )
+                db.session.add(config)
+                db.session.commit()
+                print("✓ Default homepage configuration created")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Warning: Homepage config might already exist: {e}")
         
         # Ensure settings exist with version info
-        settings = Settings.query.first()
-        if not settings:
-            print("Creating default settings...")
-            settings = Settings(db_version=CURRENT_VERSION, app_version=CURRENT_VERSION)
-            db.session.add(settings)
-            db.session.commit()
-            print(f"✓ Default settings created with version {CURRENT_VERSION}")
-        else:
-            # Update version if different
-            if settings.db_version != CURRENT_VERSION:
-                settings.db_version = CURRENT_VERSION
-                settings.app_version = CURRENT_VERSION
+        try:
+            settings = Settings.query.first()
+            if not settings:
+                print("Creating default settings...")
+                settings = Settings(db_version=CURRENT_VERSION, app_version=CURRENT_VERSION)
+                db.session.add(settings)
                 db.session.commit()
-                print(f"✓ Settings version updated to {CURRENT_VERSION}")
+                print(f"✓ Default settings created with version {CURRENT_VERSION}")
+            else:
+                # Update version if different
+                if settings.db_version != CURRENT_VERSION:
+                    settings.db_version = CURRENT_VERSION
+                    settings.app_version = CURRENT_VERSION
+                    db.session.commit()
+                    print(f"✓ Settings version updated to {CURRENT_VERSION}")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Warning: Settings initialization issue: {e}")
         
         print("✅ Database initialization complete")
 

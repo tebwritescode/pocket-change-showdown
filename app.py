@@ -7,6 +7,7 @@ from wtforms.validators import Optional, ValidationError
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 import os
+import sys
 import pandas as pd
 import io
 import base64
@@ -1481,6 +1482,7 @@ def initialize_app():
     # Import here to avoid circular dependencies
     from db_init import run_auto_migration, initialize_database
     import fcntl
+    import time
     
     # Create directories before database initialization
     basedir = os.path.abspath(os.path.dirname(__file__))
@@ -1489,6 +1491,14 @@ def initialize_app():
     
     # Use a lock file to ensure only one worker initializes the database
     lock_file = os.path.join(basedir, 'data', '.init.lock')
+    init_complete_file = os.path.join(basedir, 'data', '.init.complete')
+    
+    # Check if initialization is already complete
+    if os.path.exists(init_complete_file):
+        # Check if the file is recent (within last hour)
+        if time.time() - os.path.getmtime(init_complete_file) < 3600:
+            print(f"Worker {os.getpid()}: Database already initialized")
+            return
     
     try:
         # Try to get an exclusive lock
@@ -1496,14 +1506,20 @@ def initialize_app():
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 
+                # Double-check init isn't already done
+                if os.path.exists(init_complete_file):
+                    if time.time() - os.path.getmtime(init_complete_file) < 3600:
+                        print(f"Worker {os.getpid()}: Database already initialized")
+                        return
+                
                 # We got the lock, we're the first worker
-                print(f"Worker {os.getpid()}: Initializing database...")
+                print(f"Worker {os.getpid()}: Starting database initialization...")
                 
                 # Run automatic database migration first
                 if run_auto_migration():
-                    print("Database migration completed successfully")
+                    print(f"Worker {os.getpid()}: Database migration completed successfully")
                 else:
-                    print("Warning: Database migration encountered issues")
+                    print(f"Worker {os.getpid()}: Warning: Database migration encountered issues")
                 
                 # Create tables and initialize data
                 with app.app_context():
@@ -1511,20 +1527,36 @@ def initialize_app():
                     # Use db_init's initialization which includes version tracking
                     initialize_database(app, db)
                 
+                # Mark initialization as complete
+                with open(init_complete_file, 'w') as f:
+                    f.write(str(os.getpid()))
+                
                 print(f"Worker {os.getpid()}: Database initialization complete")
                 
             except IOError:
                 # Another worker has the lock, wait for it to finish
                 print(f"Worker {os.getpid()}: Waiting for database initialization...")
-                fcntl.flock(lock_fd, fcntl.LOCK_SH)
-                print(f"Worker {os.getpid()}: Database initialization complete")
+                
+                # Wait for initialization to complete with timeout
+                max_wait = 30  # 30 seconds timeout
+                start_time = time.time()
+                
+                while time.time() - start_time < max_wait:
+                    if os.path.exists(init_complete_file):
+                        print(f"Worker {os.getpid()}: Database initialization complete")
+                        return
+                    time.sleep(0.5)
+                
+                print(f"Worker {os.getpid()}: Timeout waiting for initialization, proceeding anyway")
                 
     except Exception as e:
         print(f"Worker {os.getpid()}: Error during initialization: {e}")
         # Continue anyway, the database might already be initialized
 
-# Initialize on import for gunicorn
-initialize_app()
+# Only initialize once - use environment variable to track
+if os.environ.get('PCS_DB_INITIALIZED') != 'true':
+    os.environ['PCS_DB_INITIALIZED'] = 'true'
+    initialize_app()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
