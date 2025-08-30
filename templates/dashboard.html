@@ -15,6 +15,9 @@
                         <option value="quarter" {% if period == 'quarter' %}selected{% endif %}>Last 90 Days</option>
                         <option value="year" {% if period == 'year' %}selected{% endif %}>Last Year</option>
                     </select>
+                    <a href="{{ url_for('dashboard_customize') }}" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-cog"></i> Customize
+                    </a>
                     <a href="{{ url_for('report_config') }}" class="btn btn-outline-danger btn-sm">
                         <i class="fas fa-file-pdf"></i> Generate Report
                     </a>

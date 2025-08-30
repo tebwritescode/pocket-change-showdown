@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+
+{% block title %}Customize Dashboard - PCS Tracker{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2><i class="fas fa-cog"></i> Customize Dashboard</h2>
+                <div>
+                    <button class="btn btn-success" id="savePresetBtn">
+                        <i class="fas fa-save"></i> Save as Preset
+                    </button>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Left Panel: Configuration -->
+        <div class="col-lg-4 mb-4">
+            <!-- Preset Selection -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-bookmark"></i> Presets</h5>
+                </div>
+                <div class="card-body">
+                    <select class="form-select mb-2" id="presetSelect">
+                        <option value="">-- Select a Preset --</option>
+                        {% for preset in presets %}
+                        <option value="{{ preset.id }}" {% if preset.is_default %}selected{% endif %}>
+                            {{ preset.name }} {% if preset.is_default %}(Default){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div class="btn-group btn-group-sm w-100" role="group">
+                        <button class="btn btn-outline-primary" id="loadPresetBtn">Load</button>
+                        <button class="btn btn-outline-success" id="setDefaultBtn">Set Default</button>
+                        <button class="btn btn-outline-danger" id="deletePresetBtn">Delete</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-filter"></i> Filters</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Date Range -->
+                    <div class="mb-3">
+                        <label class="form-label">Date Range</label>
+                        <select class="form-select" id="periodFilter">
+                            <option value="week">Last 7 Days</option>
+                            <option value="month" selected>Last 30 Days</option>
+                            <option value="quarter">Last 90 Days</option>
+                            <option value="year">Last Year</option>
+                        </select>
+                    </div>
+
+                    <!-- Categories -->
+                    <div class="mb-3">
+                        <label class="form-label">Categories</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="allCategories" checked>
+                            <label class="form-check-label" for="allCategories">All Categories</label>
+                        </div>
+                        <div id="categoryFilters" class="mt-2" style="max-height: 150px; overflow-y: auto;">
+                            {% for category in categories %}
+                            <div class="form-check">
+                                <input class="form-check-input category-filter" type="checkbox" value="{{ category.id }}" id="cat_{{ category.id }}" checked>
+                                <label class="form-check-label" for="cat_{{ category.id }}">
+                                    <i class="fas {{ category.icon }}" style="color: {{ category.color }}"></i> {{ category.name }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Payment Methods -->
+                    <div class="mb-3">
+                        <label class="form-label">Payment Methods</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="allPaymentMethods" checked>
+                            <label class="form-check-label" for="allPaymentMethods">All Methods</label>
+                        </div>
+                        <div id="paymentFilters" class="mt-2">
+                            {% for method in payment_methods %}
+                            <div class="form-check">
+                                <input class="form-check-input payment-filter" type="checkbox" value="{{ method.id }}" id="pm_{{ method.id }}" checked>
+                                <label class="form-check-label" for="pm_{{ method.id }}">
+                                    <i class="fas {{ method.icon }}"></i> {{ method.name }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Reimbursable Filter -->
+                    <div class="mb-3">
+                        <label class="form-label">Reimbursement</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="reimbursableOnly">
+                            <label class="form-check-label" for="reimbursableOnly">
+                                Reimbursable Only
+                            </label>
+                        </div>
+                        <select class="form-select mt-2" id="reimbursementStatus">
+                            <option value="all">All Statuses</option>
+                            <option value="none">Not Reimbursable</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="received">Received</option>
+                        </select>
+                    </div>
+
+                    <!-- Amount Range -->
+                    <div class="mb-3">
+                        <label class="form-label">Amount Range</label>
+                        <div class="input-group input-group-sm mb-2">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="minAmount" placeholder="Min">
+                        </div>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="maxAmount" placeholder="Max">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Widget Selection -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-th-large"></i> Available Widgets</h5>
+                </div>
+                <div class="card-body">
+                    <div class="widget-catalog">
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="category-pie">
+                            <i class="fas fa-chart-pie"></i> Category Pie Chart
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="category-bar">
+                            <i class="fas fa-chart-bar"></i> Category Bar Chart
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="payment-pie">
+                            <i class="fas fa-chart-pie"></i> Payment Method Pie
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="payment-bar">
+                            <i class="fas fa-chart-bar"></i> Payment Method Bar
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="trend-line">
+                            <i class="fas fa-chart-line"></i> Spending Trend
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="trend-area">
+                            <i class="fas fa-chart-area"></i> Spending Area Chart
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="total-spent">
+                            <i class="fas fa-dollar-sign"></i> Total Spent
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="reimbursable-amount">
+                            <i class="fas fa-hand-holding-usd"></i> Reimbursable Amount
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="pending-reimbursements">
+                            <i class="fas fa-clock"></i> Pending Reimbursements
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="expense-count">
+                            <i class="fas fa-receipt"></i> Expense Count
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="avg-expense">
+                            <i class="fas fa-calculator"></i> Average Expense
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="top-categories">
+                            <i class="fas fa-list-ol"></i> Top Categories Table
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="recent-expenses">
+                            <i class="fas fa-history"></i> Recent Expenses
+                        </div>
+                        <div class="widget-item mb-2" draggable="true" data-widget-type="reimbursement-breakdown">
+                            <i class="fas fa-chart-donut"></i> Reimbursement Status
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Preview -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-eye"></i> Dashboard Preview</h5>
+                </div>
+                <div class="card-body">
+                    <div id="dashboardPreview" class="dashboard-grid">
+                        <!-- Widgets will be dropped here -->
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-arrow-left fa-3x mb-3"></i>
+                            <p>Drag widgets from the left panel to build your dashboard</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Save Preset Modal -->
+<div class="modal fade" id="savePresetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Save Dashboard Preset</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="presetName" class="form-label">Preset Name</label>
+                    <input type="text" class="form-control" id="presetName" placeholder="My Custom Dashboard">
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="makeDefault">
+                    <label class="form-check-label" for="makeDefault">
+                        Set as default dashboard
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="confirmSavePreset">Save Preset</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.widget-catalog {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.widget-item {
+    padding: 10px;
+    background: var(--light-color);
+    border-radius: 5px;
+    cursor: move;
+    transition: all 0.3s;
+}
+
+.widget-item:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+.dashboard-grid {
+    min-height: 600px;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 15px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 5px;
+}
+
+.dashboard-widget {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: relative;
+}
+
+.dashboard-widget.small {
+    grid-column: span 3;
+    min-height: 150px;
+}
+
+.dashboard-widget.medium {
+    grid-column: span 6;
+    min-height: 250px;
+}
+
+.dashboard-widget.large {
+    grid-column: span 9;
+    min-height: 350px;
+}
+
+.dashboard-widget.full {
+    grid-column: span 12;
+    min-height: 350px;
+}
+
+.widget-controls {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: none;
+}
+
+.dashboard-widget:hover .widget-controls {
+    display: block;
+}
+
+.drag-over {
+    background: #e3f2fd !important;
+    border: 2px dashed var(--primary-color);
+}
+</style>
+
+<script src="{{ url_for('static', filename='js/dashboard-builder.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const dashboardBuilder = new DashboardBuilder();
+    
+    // Handle preset selection
+    document.getElementById('loadPresetBtn').addEventListener('click', function() {
+        const presetId = document.getElementById('presetSelect').value;
+        if (presetId) {
+            dashboardBuilder.loadPreset(presetId);
+        }
+    });
+    
+    // Handle save preset
+    document.getElementById('savePresetBtn').addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('savePresetModal'));
+        modal.show();
+    });
+    
+    document.getElementById('confirmSavePreset').addEventListener('click', function() {
+        const name = document.getElementById('presetName').value;
+        const isDefault = document.getElementById('makeDefault').checked;
+        
+        if (name) {
+            dashboardBuilder.savePreset(name, isDefault);
+            bootstrap.Modal.getInstance(document.getElementById('savePresetModal')).hide();
+        }
+    });
+    
+    // Handle filter changes
+    document.getElementById('allCategories').addEventListener('change', function(e) {
+        const checkboxes = document.querySelectorAll('.category-filter');
+        checkboxes.forEach(cb => cb.checked = e.target.checked);
+        dashboardBuilder.updateFilters();
+    });
+    
+    document.getElementById('allPaymentMethods').addEventListener('change', function(e) {
+        const checkboxes = document.querySelectorAll('.payment-filter');
+        checkboxes.forEach(cb => cb.checked = e.target.checked);
+        dashboardBuilder.updateFilters();
+    });
+    
+    // Individual filter changes
+    document.querySelectorAll('.category-filter, .payment-filter').forEach(filter => {
+        filter.addEventListener('change', () => dashboardBuilder.updateFilters());
+    });
+    
+    document.getElementById('periodFilter').addEventListener('change', () => dashboardBuilder.updateFilters());
+    document.getElementById('reimbursableOnly').addEventListener('change', () => dashboardBuilder.updateFilters());
+    document.getElementById('reimbursementStatus').addEventListener('change', () => dashboardBuilder.updateFilters());
+    document.getElementById('minAmount').addEventListener('input', () => dashboardBuilder.updateFilters());
+    document.getElementById('maxAmount').addEventListener('input', () => dashboardBuilder.updateFilters());
+    
+    // Delete preset
+    document.getElementById('deletePresetBtn').addEventListener('click', function() {
+        const presetId = document.getElementById('presetSelect').value;
+        if (presetId && confirm('Are you sure you want to delete this preset?')) {
+            dashboardBuilder.deletePreset(presetId);
+        }
+    });
+    
+    // Set default preset
+    document.getElementById('setDefaultBtn').addEventListener('click', function() {
+        const presetId = document.getElementById('presetSelect').value;
+        if (presetId) {
+            dashboardBuilder.setDefaultPreset(presetId);
+        }
+    });
+});
+</script>
+{% endblock %}

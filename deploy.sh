@@ -1,12 +1,60 @@
 #!/bin/bash
 
 # PCS Tracker Kubernetes Deployment Script
-# Usage: ./deploy.sh [namespace]
+# Usage: ./deploy.sh [variant]
+# variant: 'standard' (default) or 'mom'
 
-NAMESPACE=${1:-pcs-tracker}
-VERSION="v2.0.0"
+# Show help if requested
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "PCS Tracker Kubernetes Deployment Script"
+    echo ""
+    echo "Usage: ./deploy.sh [variant]"
+    echo ""
+    echo "Variants:"
+    echo "  standard    Deploy to 'pocket-change-showdown' namespace (default)"
+    echo "  mom         Deploy to 'pocket-change-showdown-mom' namespace"
+    echo ""
+    echo "Examples:"
+    echo "  ./deploy.sh          # Deploy standard variant"
+    echo "  ./deploy.sh standard # Deploy standard variant"
+    echo "  ./deploy.sh mom      # Deploy mom variant"
+    echo ""
+    exit 0
+fi
 
-echo "🚀 Deploying PCS Tracker ${VERSION} to namespace: ${NAMESPACE}"
+VARIANT=${1:-standard}
+VERSION="v2.1.0"
+
+# Validate variant
+if [ "$VARIANT" != "standard" ] && [ "$VARIANT" != "mom" ]; then
+    echo "❌ Invalid variant: ${VARIANT}"
+    echo "Valid variants: standard, mom"
+    echo "Use './deploy.sh --help' for usage information"
+    exit 1
+fi
+
+# Set configuration based on variant
+if [ "$VARIANT" = "mom" ]; then
+    NAMESPACE="pocket-change-showdown-mom"
+    MANIFEST_FILE="k8s/all-in-one-mom.yaml"
+    DEPLOYMENT_NAME="pocket-change-showdown-mom"
+    SERVICE_NAME="pocket-change-showdown-mom-service"
+    NODEPORT_NAME="pocket-change-showdown-mom-nodeport"
+else
+    NAMESPACE="pocket-change-showdown"
+    MANIFEST_FILE="k8s/all-in-one.yaml"
+    DEPLOYMENT_NAME="pocket-change-showdown"
+    SERVICE_NAME="pocket-change-showdown-service"
+    NODEPORT_NAME="pocket-change-showdown-nodeport"
+fi
+
+# Validate manifest file exists
+if [ ! -f "$MANIFEST_FILE" ]; then
+    echo "❌ Manifest file not found: ${MANIFEST_FILE}"
+    exit 1
+fi
+
+echo "🚀 Deploying PCS Tracker ${VERSION} (${VARIANT}) to namespace: ${NAMESPACE}"
 echo "================================================"
 
 # Check if kubectl is installed
@@ -23,22 +71,22 @@ fi
 
 echo "✅ kubectl configured and connected to cluster"
 
-# Deploy using all-in-one file
+# Deploy using appropriate manifest file
 echo ""
-echo "📦 Applying Kubernetes resources..."
-kubectl apply -f k8s/all-in-one.yaml
+echo "📦 Applying Kubernetes resources from ${MANIFEST_FILE}..."
+kubectl apply -f ${MANIFEST_FILE}
 
 # Wait for deployment to be ready
 echo ""
 echo "⏳ Waiting for deployment to be ready..."
-kubectl wait --for=condition=available --timeout=300s deployment/pcs-tracker -n ${NAMESPACE}
+kubectl wait --for=condition=available --timeout=300s deployment/${DEPLOYMENT_NAME} -n ${NAMESPACE}
 
 # Get service information
 echo ""
 echo "✅ Deployment complete!"
 echo ""
 echo "📊 Deployment Status:"
-kubectl get deployment pcs-tracker -n ${NAMESPACE}
+kubectl get deployment ${DEPLOYMENT_NAME} -n ${NAMESPACE}
 
 echo ""
 echo "🔗 Service Information:"
@@ -49,13 +97,13 @@ echo "🌐 Access Information:"
 echo "-------------------"
 
 # Check if LoadBalancer is available
-LB_IP=$(kubectl get service pcs-tracker-service -n ${NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+LB_IP=$(kubectl get service ${SERVICE_NAME} -n ${NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
 if [ ! -z "$LB_IP" ]; then
     echo "LoadBalancer IP: http://${LB_IP}"
 fi
 
 # Get NodePort
-NODE_PORT=$(kubectl get service pcs-tracker-nodeport -n ${NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+NODE_PORT=$(kubectl get service ${NODEPORT_NAME} -n ${NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
 if [ ! -z "$NODE_PORT" ]; then
     echo "NodePort: Access via http://<node-ip>:${NODE_PORT}"
     
@@ -73,12 +121,12 @@ fi
 # Port forwarding instructions
 echo ""
 echo "📡 For local access via port forwarding:"
-echo "kubectl port-forward -n ${NAMESPACE} deployment/pcs-tracker 5001:5001"
+echo "kubectl port-forward -n ${NAMESPACE} deployment/${DEPLOYMENT_NAME} 5001:5001"
 echo "Then access at: http://localhost:5001"
 
 echo ""
 echo "📝 View logs:"
-echo "kubectl logs -f deployment/pcs-tracker -n ${NAMESPACE}"
+echo "kubectl logs -f deployment/${DEPLOYMENT_NAME} -n ${NAMESPACE}"
 
 echo ""
 echo "🎉 PCS Tracker ${VERSION} deployment complete!"

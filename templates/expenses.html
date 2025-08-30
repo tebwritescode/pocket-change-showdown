@@ -64,6 +64,7 @@
                                     <th>Category</th>
                                     <th>Payment</th>
                                     <th>Amount</th>
+                                    <th>Reimbursable</th>
                                     <th>Receipt</th>
                                     <th>Actions</th>
                                 </tr>
@@ -97,6 +98,21 @@
                                         {% endif %}
                                     </td>
                                     <td><strong>${{ expense.cost|default(0)|currency }}</strong></td>
+                                    <td>
+                                        {% if expense.is_reimbursable %}
+                                            {% if expense.reimbursement_status == 'pending' %}
+                                                <span class="badge bg-warning">Pending</span>
+                                            {% elif expense.reimbursement_status == 'approved' %}
+                                                <span class="badge bg-info">Approved</span>
+                                            {% elif expense.reimbursement_status == 'received' %}
+                                                <span class="badge bg-success">Received</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">Yes</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         {% if expense.receipt_image %}
                                         <a href="{{ url_for('view_receipt', id=expense.id) }}" target="_blank" class="btn btn-sm btn-outline-info">

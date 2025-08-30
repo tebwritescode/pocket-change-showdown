@@ -13,6 +13,7 @@ import base64
 import json
 from collections import defaultdict
 import csv
+import time
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4, legal
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
@@ -30,6 +31,33 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 from io import BytesIO
 from pdf_utils import create_pie_chart, create_bar_chart, create_trend_chart, calculate_monthly_breakdown
+
+# Simple in-memory cache
+CACHE = {}
+CACHE_TIMEOUT = 300  # 5 minutes
+
+def get_cache_key(endpoint, **kwargs):
+    """Generate a cache key from endpoint and parameters"""
+    params_str = '&'.join([f"{k}={v}" for k, v in sorted(kwargs.items())])
+    return f"{endpoint}:{params_str}"
+
+def get_from_cache(key):
+    """Get value from cache if not expired"""
+    if key in CACHE:
+        timestamp, value = CACHE[key]
+        if time.time() - timestamp < CACHE_TIMEOUT:
+            return value
+        else:
+            del CACHE[key]
+    return None
+
+def set_cache(key, value):
+    """Set value in cache with current timestamp"""
+    CACHE[key] = (time.time(), value)
+
+def clear_cache():
+    """Clear all cached data"""
+    CACHE.clear()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'pcs-showdown-secret-key-2024')
@@ -90,6 +118,69 @@ class PaymentMethod(db.Model):
     is_default = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class DashboardPreset(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    is_default = db.Column(db.Boolean, default=False)
+    config = db.Column(db.Text, nullable=False)  # JSON string with widget configuration
+    filters = db.Column(db.Text, default='{}')  # JSON string with filter settings
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def get_config(self):
+        try:
+            return json.loads(self.config) if self.config else {}
+        except:
+            return {}
+    
+    def set_config(self, data):
+        self.config = json.dumps(data)
+    
+    def get_filters(self):
+        try:
+            return json.loads(self.filters) if self.filters else {}
+        except:
+            return {}
+    
+    def set_filters(self, data):
+        self.filters = json.dumps(data)
+
+class HomepageConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sections = db.Column(db.Text, nullable=False, default='{}')  # JSON with section visibility/order
+    hero_settings = db.Column(db.Text, default='{}')  # JSON with hero customization
+    table_columns = db.Column(db.Text, default='{}')  # JSON with table column settings
+    widget_layout = db.Column(db.String(20), default='2-column')  # 1-column, 2-column, 3-column
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def get_sections(self):
+        try:
+            return json.loads(self.sections) if self.sections else {}
+        except:
+            return {}
+    
+    def set_sections(self, data):
+        self.sections = json.dumps(data)
+    
+    def get_hero_settings(self):
+        try:
+            return json.loads(self.hero_settings) if self.hero_settings else {}
+        except:
+            return {}
+    
+    def set_hero_settings(self, data):
+        self.hero_settings = json.dumps(data)
+    
+    def get_table_columns(self):
+        try:
+            return json.loads(self.table_columns) if self.table_columns else {}
+        except:
+            return {}
+    
+    def set_table_columns(self, data):
+        self.table_columns = json.dumps(data)
+
 class Expense(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200))
@@ -106,6 +197,9 @@ class Expense(db.Model):
     notes = db.Column(db.Text)
     tags = db.Column(db.String(500))
     custom_data = db.Column(db.Text, default='{}')
+    is_reimbursable = db.Column(db.Boolean, default=False)
+    reimbursement_status = db.Column(db.String(20), default='none')  # none, pending, approved, received
+    reimbursement_notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -138,6 +232,14 @@ class ExpenseForm(BaseForm):
     vendor = StringField('Vendor', validators=[Optional()])
     notes = TextAreaField('Notes', validators=[Optional()])
     tags = StringField('Tags (comma-separated)', validators=[Optional()])
+    is_reimbursable = SelectField('Reimbursable', choices=[(0, 'No'), (1, 'Yes')], coerce=int, validators=[Optional()])
+    reimbursement_status = SelectField('Reimbursement Status', choices=[
+        ('none', 'Not Applicable'),
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('received', 'Received')
+    ], validators=[Optional()])
+    reimbursement_notes = TextAreaField('Reimbursement Notes', validators=[Optional()])
 
 class CategoryForm(BaseForm):
     name = StringField('Category Name')
@@ -325,6 +427,9 @@ def new_expense():
         expense.vendor = form.vendor.data
         expense.notes = form.notes.data
         expense.tags = form.tags.data
+        expense.is_reimbursable = bool(form.is_reimbursable.data)
+        expense.reimbursement_status = form.reimbursement_status.data if form.is_reimbursable.data else 'none'
+        expense.reimbursement_notes = form.reimbursement_notes.data if form.is_reimbursable.data else None
         
         # Handle file upload
         if form.receipt.data:
@@ -338,6 +443,7 @@ def new_expense():
         
         db.session.add(expense)
         db.session.commit()
+        clear_cache()  # Invalidate cache after adding expense
         flash('Expense added successfully!', 'success')
         return redirect(url_for('expenses'))
     
@@ -368,6 +474,9 @@ def edit_expense(id):
         expense.vendor = form.vendor.data
         expense.notes = form.notes.data
         expense.tags = form.tags.data
+        expense.is_reimbursable = bool(form.is_reimbursable.data)
+        expense.reimbursement_status = form.reimbursement_status.data if form.is_reimbursable.data else 'none'
+        expense.reimbursement_notes = form.reimbursement_notes.data if form.is_reimbursable.data else None
         expense.updated_at = datetime.utcnow()
         
         # Handle file upload
@@ -381,6 +490,7 @@ def edit_expense(id):
                 expense.receipt_mimetype = file.content_type
         
         db.session.commit()
+        clear_cache()  # Invalidate cache after updating expense
         flash('Expense updated successfully!', 'success')
         return redirect(url_for('expenses'))
     
@@ -391,6 +501,7 @@ def delete_expense(id):
     expense = Expense.query.get_or_404(id)
     db.session.delete(expense)
     db.session.commit()
+    clear_cache()  # Invalidate cache after deleting expense
     flash('Expense deleted successfully!', 'success')
     return redirect(url_for('expenses'))
 
@@ -453,9 +564,48 @@ def dashboard():
                          avg_expense=avg_expense,
                          period=period)
 
+@app.route('/dashboard/customize')
+def dashboard_customize():
+    settings = Settings.query.first()
+    categories = Category.query.all()
+    payment_methods = PaymentMethod.query.all()
+    presets = DashboardPreset.query.all()
+    
+    # Get current preset or default config
+    default_preset = DashboardPreset.query.filter_by(is_default=True).first()
+    
+    return render_template('dashboard_config.html',
+                         settings=settings,
+                         categories=categories,
+                         payment_methods=payment_methods,
+                         presets=presets,
+                         default_preset=default_preset)
+
 @app.route('/api/expense_data')
 def api_expense_data():
     period = request.args.get('period', 'month')
+    categories_filter = request.args.getlist('categories[]')
+    payment_methods_filter = request.args.getlist('payment_methods[]')
+    min_amount = request.args.get('min_amount', type=float)
+    max_amount = request.args.get('max_amount', type=float)
+    reimbursable_only = request.args.get('reimbursable_only', 'false').lower() == 'true'
+    reimbursement_status = request.args.get('reimbursement_status')
+    
+    # Check cache first
+    cache_key = get_cache_key('expense_data',
+        period=period,
+        categories=','.join(map(str, categories_filter)) if categories_filter else '',
+        payment_methods=','.join(map(str, payment_methods_filter)) if payment_methods_filter else '',
+        min_amount=min_amount or '',
+        max_amount=max_amount or '',
+        reimbursable_only=reimbursable_only,
+        reimbursement_status=reimbursement_status or ''
+    )
+    
+    cached_result = get_from_cache(cache_key)
+    if cached_result:
+        return jsonify(cached_result)
+    
     today = datetime.today()
     
     if period == 'week':
@@ -469,7 +619,28 @@ def api_expense_data():
     else:
         start_date = today - timedelta(days=30)
     
-    expenses = Expense.query.filter(Expense.date >= start_date).all()
+    # Build query with filters
+    query = Expense.query.filter(Expense.date >= start_date)
+    
+    if categories_filter:
+        query = query.filter(Expense.category_id.in_(categories_filter))
+    
+    if payment_methods_filter:
+        query = query.filter(Expense.payment_method_id.in_(payment_methods_filter))
+    
+    if min_amount is not None:
+        query = query.filter(Expense.cost >= min_amount)
+    
+    if max_amount is not None:
+        query = query.filter(Expense.cost <= max_amount)
+    
+    if reimbursable_only:
+        query = query.filter(Expense.is_reimbursable == True)
+    
+    if reimbursement_status and reimbursement_status != 'all':
+        query = query.filter(Expense.reimbursement_status == reimbursement_status)
+    
+    expenses = query.all()
     
     # Category breakdown
     category_data = defaultdict(float)
@@ -489,7 +660,13 @@ def api_expense_data():
         date_str = expense.date.strftime('%Y-%m-%d') if expense.date else 'Unknown'
         daily_data[date_str] += expense.cost or 0
     
-    return jsonify({
+    # Reimbursement statistics
+    reimbursable_total = sum(e.cost or 0 for e in expenses if e.is_reimbursable)
+    pending_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable and e.reimbursement_status == 'pending')
+    approved_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable and e.reimbursement_status == 'approved')
+    received_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable and e.reimbursement_status == 'received')
+    
+    result = {
         'categories': {
             'labels': list(category_data.keys()),
             'data': list(category_data.values())
@@ -501,8 +678,215 @@ def api_expense_data():
         'daily_trend': {
             'labels': sorted(daily_data.keys()),
             'data': [daily_data[k] for k in sorted(daily_data.keys())]
-        }
-    })
+        },
+        'reimbursement_stats': {
+            'total_reimbursable': reimbursable_total,
+            'pending': pending_reimbursements,
+            'approved': approved_reimbursements,
+            'received': received_reimbursements
+        },
+        'total_expenses': sum(e.cost or 0 for e in expenses),
+        'expense_count': len(expenses)
+    }
+    
+    # Cache the result
+    set_cache(cache_key, result)
+    return jsonify(result)
+
+@app.route('/api/dashboard/presets', methods=['GET', 'POST'])
+def api_dashboard_presets():
+    if request.method == 'GET':
+        presets = DashboardPreset.query.all()
+        return jsonify([{
+            'id': p.id,
+            'name': p.name,
+            'is_default': p.is_default,
+            'config': p.get_config(),
+            'filters': p.get_filters()
+        } for p in presets])
+    
+    elif request.method == 'POST':
+        data = request.json
+        preset = DashboardPreset(
+            name=data.get('name', 'Untitled Preset'),
+            is_default=data.get('is_default', False)
+        )
+        preset.set_config(data.get('config', {}))
+        preset.set_filters(data.get('filters', {}))
+        
+        # If this is set as default, unset other defaults
+        if preset.is_default:
+            DashboardPreset.query.update({'is_default': False})
+        
+        db.session.add(preset)
+        db.session.commit()
+        
+        return jsonify({
+            'id': preset.id,
+            'name': preset.name,
+            'is_default': preset.is_default,
+            'config': preset.get_config(),
+            'filters': preset.get_filters()
+        }), 201
+
+@app.route('/api/dashboard/presets/<int:preset_id>', methods=['GET', 'PUT', 'DELETE'])
+def api_dashboard_preset(preset_id):
+    preset = DashboardPreset.query.get_or_404(preset_id)
+    
+    if request.method == 'GET':
+        return jsonify({
+            'id': preset.id,
+            'name': preset.name,
+            'is_default': preset.is_default,
+            'config': preset.get_config(),
+            'filters': preset.get_filters()
+        })
+    
+    elif request.method == 'PUT':
+        data = request.json
+        preset.name = data.get('name', preset.name)
+        
+        if 'config' in data:
+            preset.set_config(data['config'])
+        
+        if 'filters' in data:
+            preset.set_filters(data['filters'])
+        
+        # Handle default setting
+        if data.get('is_default', False) and not preset.is_default:
+            DashboardPreset.query.update({'is_default': False})
+            preset.is_default = True
+        elif not data.get('is_default', False):
+            preset.is_default = False
+        
+        db.session.commit()
+        
+        return jsonify({
+            'id': preset.id,
+            'name': preset.name,
+            'is_default': preset.is_default,
+            'config': preset.get_config(),
+            'filters': preset.get_filters()
+        })
+    
+    elif request.method == 'DELETE':
+        db.session.delete(preset)
+        db.session.commit()
+        return '', 204
+
+@app.route('/api/widgets/data', methods=['GET'])
+def api_widgets_data():
+    widget_type = request.args.get('type')
+    period = request.args.get('period', 'month')
+    categories_filter = request.args.getlist('categories[]')
+    payment_methods_filter = request.args.getlist('payment_methods[]')
+    reimbursable_only = request.args.get('reimbursable_only', 'false').lower() == 'true'
+    
+    today = datetime.today()
+    
+    if period == 'week':
+        start_date = today - timedelta(days=7)
+    elif period == 'month':
+        start_date = today - timedelta(days=30)
+    elif period == 'quarter':
+        start_date = today - timedelta(days=90)
+    elif period == 'year':
+        start_date = today - timedelta(days=365)
+    else:
+        start_date = today - timedelta(days=30)
+    
+    # Build query with filters
+    query = Expense.query.filter(Expense.date >= start_date)
+    
+    if categories_filter:
+        query = query.filter(Expense.category_id.in_(categories_filter))
+    
+    if payment_methods_filter:
+        query = query.filter(Expense.payment_method_id.in_(payment_methods_filter))
+    
+    if reimbursable_only:
+        query = query.filter(Expense.is_reimbursable == True)
+    
+    expenses = query.all()
+    
+    # Return data based on widget type
+    if widget_type == 'total_spent':
+        return jsonify({'value': sum(e.cost or 0 for e in expenses)})
+    
+    elif widget_type == 'reimbursable_amount':
+        return jsonify({'value': sum(e.cost or 0 for e in expenses if e.is_reimbursable)})
+    
+    elif widget_type == 'pending_reimbursements':
+        pending = [e for e in expenses if e.is_reimbursable and e.reimbursement_status == 'pending']
+        return jsonify({
+            'count': len(pending),
+            'total': sum(e.cost or 0 for e in pending)
+        })
+    
+    elif widget_type == 'category_breakdown':
+        category_data = defaultdict(float)
+        for expense in expenses:
+            category_name = expense.category.name if expense.category else 'Uncategorized'
+            category_data[category_name] += expense.cost or 0
+        return jsonify({
+            'labels': list(category_data.keys()),
+            'data': list(category_data.values())
+        })
+    
+    elif widget_type == 'recent_expenses':
+        recent = sorted(expenses, key=lambda x: x.created_at, reverse=True)[:10]
+        return jsonify([{
+            'id': e.id,
+            'title': e.title or 'Untitled',
+            'amount': e.cost or 0,
+            'category': e.category.name if e.category else 'Uncategorized',
+            'date': e.date.isoformat() if e.date else None,
+            'is_reimbursable': e.is_reimbursable,
+            'reimbursement_status': e.reimbursement_status
+        } for e in recent])
+    
+    else:
+        return jsonify({'error': 'Unknown widget type'}), 400
+
+@app.route('/api/homepage/config', methods=['GET', 'PUT'])
+def api_homepage_config():
+    config = HomepageConfig.query.first()
+    if not config:
+        config = HomepageConfig()
+        db.session.add(config)
+        db.session.commit()
+    
+    if request.method == 'GET':
+        return jsonify({
+            'sections': config.get_sections(),
+            'hero_settings': config.get_hero_settings(),
+            'table_columns': config.get_table_columns(),
+            'widget_layout': config.widget_layout
+        })
+    
+    elif request.method == 'PUT':
+        data = request.json
+        
+        if 'sections' in data:
+            config.set_sections(data['sections'])
+        
+        if 'hero_settings' in data:
+            config.set_hero_settings(data['hero_settings'])
+        
+        if 'table_columns' in data:
+            config.set_table_columns(data['table_columns'])
+        
+        if 'widget_layout' in data:
+            config.widget_layout = data['widget_layout']
+        
+        db.session.commit()
+        
+        return jsonify({
+            'sections': config.get_sections(),
+            'hero_settings': config.get_hero_settings(),
+            'table_columns': config.get_table_columns(),
+            'widget_layout': config.widget_layout
+        })
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings_page():
