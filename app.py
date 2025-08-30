@@ -1480,24 +1480,48 @@ def initialize_app():
     """Initialize the application, create directories and database"""
     # Import here to avoid circular dependencies
     from db_init import run_auto_migration, initialize_database
+    import fcntl
     
     # Create directories before database initialization
     basedir = os.path.abspath(os.path.dirname(__file__))
     os.makedirs(os.path.join(basedir, 'data'), exist_ok=True)
     os.makedirs(os.path.join(basedir, 'uploads'), exist_ok=True)
     
-    # Run automatic database migration first
-    print("Starting automatic database migration...")
-    if run_auto_migration():
-        print("Database migration completed successfully")
-    else:
-        print("Warning: Database migration encountered issues")
+    # Use a lock file to ensure only one worker initializes the database
+    lock_file = os.path.join(basedir, 'data', '.init.lock')
     
-    # Create tables and initialize data
-    with app.app_context():
-        db.create_all()
-        # Use db_init's initialization which includes version tracking
-        initialize_database(app, db)
+    try:
+        # Try to get an exclusive lock
+        with open(lock_file, 'w') as lock_fd:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                
+                # We got the lock, we're the first worker
+                print(f"Worker {os.getpid()}: Initializing database...")
+                
+                # Run automatic database migration first
+                if run_auto_migration():
+                    print("Database migration completed successfully")
+                else:
+                    print("Warning: Database migration encountered issues")
+                
+                # Create tables and initialize data
+                with app.app_context():
+                    db.create_all()
+                    # Use db_init's initialization which includes version tracking
+                    initialize_database(app, db)
+                
+                print(f"Worker {os.getpid()}: Database initialization complete")
+                
+            except IOError:
+                # Another worker has the lock, wait for it to finish
+                print(f"Worker {os.getpid()}: Waiting for database initialization...")
+                fcntl.flock(lock_fd, fcntl.LOCK_SH)
+                print(f"Worker {os.getpid()}: Database initialization complete")
+                
+    except Exception as e:
+        print(f"Worker {os.getpid()}: Error during initialization: {e}")
+        # Continue anyway, the database might already be initialized
 
 # Initialize on import for gunicorn
 initialize_app()

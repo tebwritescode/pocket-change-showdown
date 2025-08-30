@@ -190,7 +190,13 @@ def initialize_database(app, db):
         db.create_all()
         
         # Check if we need to add default data
-        if Category.query.count() == 0:
+        try:
+            category_count = Category.query.count()
+        except Exception:
+            # Table might not exist yet
+            category_count = 0
+            
+        if category_count == 0:
             print("Creating default categories...")
             default_categories = [
                 {'name': 'Travel', 'color': '#0d6efd', 'icon': 'fa-plane', 'description': 'Transportation and travel expenses'},
@@ -211,7 +217,12 @@ def initialize_database(app, db):
             db.session.commit()
             print("✓ Default categories created")
         
-        if PaymentMethod.query.count() == 0:
+        try:
+            payment_method_count = PaymentMethod.query.count()
+        except Exception:
+            payment_method_count = 0
+            
+        if payment_method_count == 0:
             print("Creating default payment methods...")
             default_methods = [
                 {'name': 'Credit Card', 'icon': 'fa-credit-card'},

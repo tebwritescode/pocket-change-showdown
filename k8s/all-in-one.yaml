@@ -29,7 +29,7 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  storageClassName: ssd
+  storageClassName: ceph-block
 
 ---
 # PersistentVolumeClaim for uploads
@@ -44,7 +44,7 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  storageClassName: ssd
+  storageClassName: ceph-block
 
 ---
 # Deployment
