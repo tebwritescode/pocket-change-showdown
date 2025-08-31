@@ -11,12 +11,13 @@ from datetime import datetime
 import shutil
 
 # Current application version
-CURRENT_VERSION = "2.1.1"
+CURRENT_VERSION = "2.2.0"
 
 # Migration history - maps versions to their required migrations
 MIGRATION_HISTORY = {
     "2.0.0": [],  # Base version
-    "2.1.0": ["reimbursement_tracking", "dashboard_preset", "homepage_config", "version_tracking"]
+    "2.1.0": ["reimbursement_tracking", "dashboard_preset", "homepage_config", "version_tracking"],
+    "2.2.0": ["reimbursable_status_enum"]
 }
 
 def ensure_database_directory():
@@ -158,6 +159,95 @@ def check_and_migrate_database(db_path):
             conn.commit()
             migrations_applied.append("homepage_config")
             print("✓ Homepage config table created with defaults")
+        
+        # Check and apply reimbursable status enum migration
+        cursor.execute("PRAGMA table_info(expense)")
+        expense_columns = {col[1]: col[2] for col in cursor.fetchall()}
+        
+        if 'is_reimbursable' in expense_columns and expense_columns['is_reimbursable'].upper() in ['BOOLEAN', 'BOOL', 'INTEGER']:
+            print("Applying migration: Converting is_reimbursable to enum status...")
+            
+            # Create backup before migration if not already created
+            if not migrations_applied:
+                backup_path = f"{db_path}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                shutil.copy2(db_path, backup_path)
+                print(f"Backup created: {backup_path}")
+            
+            try:
+                # Step 1: Add new column with CHECK constraint
+                cursor.execute("""
+                    ALTER TABLE expense ADD COLUMN reimbursable_status VARCHAR(10) 
+                    DEFAULT 'no' 
+                    CHECK (reimbursable_status IN ('yes', 'no', 'maybe'))
+                """)
+                
+                # Step 2: Migrate existing data
+                cursor.execute("""
+                    UPDATE expense 
+                    SET reimbursable_status = CASE 
+                        WHEN is_reimbursable = 1 OR is_reimbursable = 'true' THEN 'yes'
+                        ELSE 'no'
+                    END
+                """)
+                
+                # Step 3: Create new table without old column
+                cursor.execute("""
+                    CREATE TABLE expense_new (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        title VARCHAR(200),
+                        description TEXT,
+                        category_id INTEGER,
+                        cost FLOAT DEFAULT 0.0,
+                        payment_method_id INTEGER,
+                        date DATE,
+                        receipt_image BLOB,
+                        receipt_filename VARCHAR(200),
+                        receipt_mimetype VARCHAR(100),
+                        location VARCHAR(200),
+                        vendor VARCHAR(200),
+                        notes TEXT,
+                        tags VARCHAR(500),
+                        custom_data TEXT DEFAULT '{}',
+                        is_reimbursable VARCHAR(10) DEFAULT 'no' CHECK (is_reimbursable IN ('yes', 'no', 'maybe')),
+                        reimbursement_status VARCHAR(20) DEFAULT 'none',
+                        reimbursement_notes TEXT,
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        FOREIGN KEY (category_id) REFERENCES category (id),
+                        FOREIGN KEY (payment_method_id) REFERENCES payment_method (id)
+                    )
+                """)
+                
+                # Step 4: Copy data to new table
+                cursor.execute("""
+                    INSERT INTO expense_new (
+                        id, title, description, category_id, cost, payment_method_id,
+                        date, receipt_image, receipt_filename, receipt_mimetype,
+                        location, vendor, notes, tags, custom_data,
+                        is_reimbursable, reimbursement_status, reimbursement_notes,
+                        created_at, updated_at
+                    )
+                    SELECT 
+                        id, title, description, category_id, cost, payment_method_id,
+                        date, receipt_image, receipt_filename, receipt_mimetype,
+                        location, vendor, notes, tags, custom_data,
+                        reimbursable_status, reimbursement_status, reimbursement_notes,
+                        created_at, updated_at
+                    FROM expense
+                """)
+                
+                # Step 5: Replace old table
+                cursor.execute("DROP TABLE expense")
+                cursor.execute("ALTER TABLE expense_new RENAME TO expense")
+                
+                conn.commit()
+                migrations_applied.append("reimbursable_status_enum")
+                print("✓ Reimbursable status converted to enum (yes/no/maybe)")
+                
+            except sqlite3.Error as e:
+                print(f"Migration error: {e}")
+                conn.rollback()
+                raise
         
         # Update database version after migrations
         if migrations_applied:
@@ -308,6 +398,95 @@ def initialize_database(app, db):
             print(f"Warning: Settings initialization issue: {e}")
         
         print("✅ Database initialization complete")
+
+def rollback_reimbursable_enum_migration(db_path):
+    """Rollback the reimbursable status enum migration"""
+    print("Rolling back reimbursable status enum migration...")
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Create backup before rollback
+        backup_path = f"{db_path}.rollback_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        shutil.copy2(db_path, backup_path)
+        print(f"Backup created: {backup_path}")
+        
+        # Check current structure
+        cursor.execute("PRAGMA table_info(expense)")
+        columns = {col[1]: col[2] for col in cursor.fetchall()}
+        
+        if 'is_reimbursable' in columns and columns['is_reimbursable'].upper() in ['VARCHAR(10)', 'TEXT']:
+            # Create new table with Boolean is_reimbursable
+            cursor.execute("""
+                CREATE TABLE expense_rollback (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    title VARCHAR(200),
+                    description TEXT,
+                    category_id INTEGER,
+                    cost FLOAT DEFAULT 0.0,
+                    payment_method_id INTEGER,
+                    date DATE,
+                    receipt_image BLOB,
+                    receipt_filename VARCHAR(200),
+                    receipt_mimetype VARCHAR(100),
+                    location VARCHAR(200),
+                    vendor VARCHAR(200),
+                    notes TEXT,
+                    tags VARCHAR(500),
+                    custom_data TEXT DEFAULT '{}',
+                    is_reimbursable BOOLEAN DEFAULT 0,
+                    reimbursement_status VARCHAR(20) DEFAULT 'none',
+                    reimbursement_notes TEXT,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY (category_id) REFERENCES category (id),
+                    FOREIGN KEY (payment_method_id) REFERENCES payment_method (id)
+                )
+            """)
+            
+            # Copy data with conversion back to Boolean
+            cursor.execute("""
+                INSERT INTO expense_rollback (
+                    id, title, description, category_id, cost, payment_method_id,
+                    date, receipt_image, receipt_filename, receipt_mimetype,
+                    location, vendor, notes, tags, custom_data,
+                    is_reimbursable, reimbursement_status, reimbursement_notes,
+                    created_at, updated_at
+                )
+                SELECT 
+                    id, title, description, category_id, cost, payment_method_id,
+                    date, receipt_image, receipt_filename, receipt_mimetype,
+                    location, vendor, notes, tags, custom_data,
+                    CASE 
+                        WHEN is_reimbursable = 'yes' THEN 1
+                        ELSE 0
+                    END,
+                    reimbursement_status, reimbursement_notes,
+                    created_at, updated_at
+                FROM expense
+            """)
+            
+            # Replace tables
+            cursor.execute("DROP TABLE expense")
+            cursor.execute("ALTER TABLE expense_rollback RENAME TO expense")
+            
+            # Update version back to 2.1.1
+            update_database_version(cursor, "2.1.1")
+            
+            conn.commit()
+            print("✅ Rollback completed successfully")
+            print("⚠️  Note: 'maybe' values were converted to 'no' (False)")
+            
+        else:
+            print("❌ No enum migration found to rollback")
+        
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"❌ Rollback failed: {e}")
+        return False
 
 def run_auto_migration():
     """Main function to run automatic database migration"""

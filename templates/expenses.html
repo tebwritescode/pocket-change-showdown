@@ -61,11 +61,20 @@
                                 <tr>
                                     <th>Date</th>
                                     <th>Title</th>
+                                    <th>Description</th>
                                     <th>Category</th>
                                     <th>Payment</th>
                                     <th>Amount</th>
+                                    <th>Location</th>
+                                    <th>Vendor</th>
+                                    <th>Notes</th>
+                                    <th>Tags</th>
                                     <th>Reimbursable</th>
+                                    <th>Reimbursement Status</th>
+                                    <th>Reimbursement Notes</th>
                                     <th>Receipt</th>
+                                    <th>Created</th>
+                                    <th>Updated</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -74,10 +83,18 @@
                                 <tr>
                                     <td>{{ expense.date.strftime('%m/%d/%Y') if expense.date else 'N/A' }}</td>
                                     <td>
-                                        <strong>{{ expense.title or 'Untitled' }}</strong>
-                                        {% if expense.description %}
-                                        <br><small class="text-muted">{{ expense.description[:50] }}{% if expense.description|length > 50 %}...{% endif %}</small>
-                                        {% endif %}
+                                        <strong class="expense-title-link" style="cursor: pointer; color: #0d6efd;" onclick="showExpensePreview({{ expense.id }}, '{{ expense.title|e }}')">
+                                            {{ expense.title or 'Untitled' }}
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {% if expense.description %}
+                                                {{ expense.description[:50] }}{% if expense.description|length > 50 %}...{% endif %}
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        </small>
                                     </td>
                                     <td>
                                         {% if expense.category %}
@@ -99,7 +116,37 @@
                                     </td>
                                     <td><strong>${{ expense.cost|default(0)|currency }}</strong></td>
                                     <td>
-                                        {% if expense.is_reimbursable %}
+                                        <small class="text-muted">{{ expense.location or '-' }}</small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ expense.vendor or '-' }}</small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {% if expense.notes %}
+                                                {{ expense.notes[:30] }}{% if expense.notes|length > 30 %}...{% endif %}
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {% if expense.tags %}
+                                                {% set tag_list = expense.tags.split(',') %}
+                                                {% for tag in tag_list[:2] %}
+                                                    <span class="badge bg-light text-dark">{{ tag.strip() }}</span>
+                                                {% endfor %}
+                                                {% if tag_list|length > 2 %}
+                                                    <span class="text-muted">+{{ tag_list|length - 2 }} more</span>
+                                                {% endif %}
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </small>
+                                    </td>
+                                    <td>
+                                        {% if expense.is_reimbursable == 'yes' %}
                                             {% if expense.reimbursement_status == 'pending' %}
                                                 <span class="badge bg-warning">Pending</span>
                                             {% elif expense.reimbursement_status == 'approved' %}
@@ -107,11 +154,37 @@
                                             {% elif expense.reimbursement_status == 'received' %}
                                                 <span class="badge bg-success">Received</span>
                                             {% else %}
-                                                <span class="badge bg-secondary">Yes</span>
+                                                <span class="badge bg-success">Yes</span>
+                                            {% endif %}
+                                        {% elif expense.is_reimbursable == 'maybe' %}
+                                            <span class="badge bg-warning">Maybe</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">No</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if expense.reimbursement_status and expense.reimbursement_status != 'none' %}
+                                            {% if expense.reimbursement_status == 'pending' %}
+                                                <span class="badge bg-warning">Pending</span>
+                                            {% elif expense.reimbursement_status == 'approved' %}
+                                                <span class="badge bg-info">Approved</span>
+                                            {% elif expense.reimbursement_status == 'received' %}
+                                                <span class="badge bg-success">Received</span>
+                                            {% else %}
+                                                <span class="text-muted">{{ expense.reimbursement_status.title() }}</span>
                                             {% endif %}
                                         {% else %}
                                             <span class="text-muted">-</span>
                                         {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {% if expense.reimbursement_notes %}
+                                                {{ expense.reimbursement_notes[:20] }}{% if expense.reimbursement_notes|length > 20 %}...{% endif %}
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </small>
                                     </td>
                                     <td>
                                         {% if expense.receipt_image %}
@@ -121,6 +194,12 @@
                                         {% else %}
                                         <span class="text-muted">No receipt</span>
                                         {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ expense.created_at.strftime('%m/%d/%Y') if expense.created_at else 'N/A' }}</small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ expense.updated_at.strftime('%m/%d/%Y') if expense.updated_at else 'N/A' }}</small>
                                     </td>
                                     <td>
                                         <div class="btn-group" role="group">
@@ -160,6 +239,7 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/expense-columns.js') }}"></script>
+<script src="{{ url_for('static', filename='js/expense-preview.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Add search functionality if needed

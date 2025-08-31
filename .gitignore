@@ -63,4 +63,15 @@ docker-compose.override.yml
 .env.local
 .env.production
 .env.development
-EOF < /dev/null
+# Node/Playwright test files
+node_modules/
+test-data/
+test-results/
+tests/screenshots/
+playwright-report/
+package-lock.json
+
+# Test artifacts
+TEST_REPORT.md
+test_endpoints.sh
+docker-compose.test.yml

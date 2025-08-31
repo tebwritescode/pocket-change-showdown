@@ -200,7 +200,7 @@ class Expense(db.Model):
     notes = db.Column(db.Text)
     tags = db.Column(db.String(500))
     custom_data = db.Column(db.Text, default='{}')
-    is_reimbursable = db.Column(db.Boolean, default=False)
+    is_reimbursable = db.Column(db.String(10), default='no', nullable=False)
     reimbursement_status = db.Column(db.String(20), default='none')  # none, pending, approved, received
     reimbursement_notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -235,7 +235,7 @@ class ExpenseForm(BaseForm):
     vendor = StringField('Vendor', validators=[Optional()])
     notes = TextAreaField('Notes', validators=[Optional()])
     tags = StringField('Tags (comma-separated)', validators=[Optional()])
-    is_reimbursable = SelectField('Reimbursable', choices=[(0, 'No'), (1, 'Yes')], coerce=int, validators=[Optional()])
+    is_reimbursable = SelectField('Reimbursable', choices=[('no', 'No'), ('yes', 'Yes'), ('maybe', 'Maybe')], validators=[Optional()])
     reimbursement_status = SelectField('Reimbursement Status', choices=[
         ('none', 'Not Applicable'),
         ('pending', 'Pending'),
@@ -430,9 +430,9 @@ def new_expense():
         expense.vendor = form.vendor.data
         expense.notes = form.notes.data
         expense.tags = form.tags.data
-        expense.is_reimbursable = bool(form.is_reimbursable.data)
-        expense.reimbursement_status = form.reimbursement_status.data if form.is_reimbursable.data else 'none'
-        expense.reimbursement_notes = form.reimbursement_notes.data if form.is_reimbursable.data else None
+        expense.is_reimbursable = form.is_reimbursable.data or 'no'
+        expense.reimbursement_status = form.reimbursement_status.data if form.is_reimbursable.data in ['yes', 'maybe'] else 'none'
+        expense.reimbursement_notes = form.reimbursement_notes.data if form.is_reimbursable.data in ['yes', 'maybe'] else None
         
         # Handle file upload
         if form.receipt.data:
@@ -477,9 +477,9 @@ def edit_expense(id):
         expense.vendor = form.vendor.data
         expense.notes = form.notes.data
         expense.tags = form.tags.data
-        expense.is_reimbursable = bool(form.is_reimbursable.data)
-        expense.reimbursement_status = form.reimbursement_status.data if form.is_reimbursable.data else 'none'
-        expense.reimbursement_notes = form.reimbursement_notes.data if form.is_reimbursable.data else None
+        expense.is_reimbursable = form.is_reimbursable.data or 'no'
+        expense.reimbursement_status = form.reimbursement_status.data if form.is_reimbursable.data in ['yes', 'maybe'] else 'none'
+        expense.reimbursement_notes = form.reimbursement_notes.data if form.is_reimbursable.data in ['yes', 'maybe'] else None
         expense.updated_at = datetime.utcnow()
         
         # Handle file upload
@@ -520,6 +520,51 @@ def view_receipt(id):
         )
     flash('No receipt found for this expense', 'warning')
     return redirect(url_for('expenses'))
+
+@app.route('/api/expense/<int:id>')
+def api_expense_detail(id):
+    expense = Expense.query.get_or_404(id)
+    
+    # Build expense data dictionary
+    expense_data = {
+        'id': expense.id,
+        'title': expense.title,
+        'description': expense.description,
+        'cost': expense.cost,
+        'date': expense.date.isoformat() if expense.date else None,
+        'location': expense.location,
+        'vendor': expense.vendor,
+        'notes': expense.notes,
+        'tags': expense.tags,
+        'is_reimbursable': expense.is_reimbursable,
+        'reimbursement_status': expense.reimbursement_status,
+        'reimbursement_notes': expense.reimbursement_notes,
+        'receipt_image': bool(expense.receipt_image),
+        'receipt_filename': expense.receipt_filename,
+        'created_at': expense.created_at.isoformat() if expense.created_at else None,
+        'updated_at': expense.updated_at.isoformat() if expense.updated_at else None,
+        'category': None,
+        'payment_method': None
+    }
+    
+    # Add category data if exists
+    if expense.category:
+        expense_data['category'] = {
+            'id': expense.category.id,
+            'name': expense.category.name,
+            'color': expense.category.color,
+            'icon': expense.category.icon
+        }
+    
+    # Add payment method data if exists
+    if expense.payment_method:
+        expense_data['payment_method'] = {
+            'id': expense.payment_method.id,
+            'name': expense.payment_method.name,
+            'icon': expense.payment_method.icon
+        }
+    
+    return jsonify(expense_data)
 
 @app.route('/dashboard')
 def dashboard():
@@ -638,7 +683,7 @@ def api_expense_data():
         query = query.filter(Expense.cost <= max_amount)
     
     if reimbursable_only:
-        query = query.filter(Expense.is_reimbursable == True)
+        query = query.filter(Expense.is_reimbursable.in_(['yes', 'maybe']))
     
     if reimbursement_status and reimbursement_status != 'all':
         query = query.filter(Expense.reimbursement_status == reimbursement_status)
@@ -664,10 +709,10 @@ def api_expense_data():
         daily_data[date_str] += expense.cost or 0
     
     # Reimbursement statistics
-    reimbursable_total = sum(e.cost or 0 for e in expenses if e.is_reimbursable)
-    pending_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable and e.reimbursement_status == 'pending')
-    approved_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable and e.reimbursement_status == 'approved')
-    received_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable and e.reimbursement_status == 'received')
+    reimbursable_total = sum(e.cost or 0 for e in expenses if e.is_reimbursable in ['yes', 'maybe'])
+    pending_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable in ['yes', 'maybe'] and e.reimbursement_status == 'pending')
+    approved_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable in ['yes', 'maybe'] and e.reimbursement_status == 'approved')
+    received_reimbursements = sum(e.cost or 0 for e in expenses if e.is_reimbursable in ['yes', 'maybe'] and e.reimbursement_status == 'received')
     
     result = {
         'categories': {
@@ -808,7 +853,7 @@ def api_widgets_data():
         query = query.filter(Expense.payment_method_id.in_(payment_methods_filter))
     
     if reimbursable_only:
-        query = query.filter(Expense.is_reimbursable == True)
+        query = query.filter(Expense.is_reimbursable.in_(['yes', 'maybe']))
     
     expenses = query.all()
     
@@ -817,10 +862,10 @@ def api_widgets_data():
         return jsonify({'value': sum(e.cost or 0 for e in expenses)})
     
     elif widget_type == 'reimbursable_amount':
-        return jsonify({'value': sum(e.cost or 0 for e in expenses if e.is_reimbursable)})
+        return jsonify({'value': sum(e.cost or 0 for e in expenses if e.is_reimbursable in ['yes', 'maybe'])})
     
     elif widget_type == 'pending_reimbursements':
-        pending = [e for e in expenses if e.is_reimbursable and e.reimbursement_status == 'pending']
+        pending = [e for e in expenses if e.is_reimbursable in ['yes', 'maybe'] and e.reimbursement_status == 'pending']
         return jsonify({
             'count': len(pending),
             'total': sum(e.cost or 0 for e in pending)

@@ -183,7 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (isReimbursable) {
         function toggleReimbursementDetails() {
-            if (isReimbursable.value === '1') {
+            if (isReimbursable.value === 'yes' || isReimbursable.value === 'maybe') {
                 reimbursementDetails.style.display = 'block';
             } else {
                 reimbursementDetails.style.display = 'none';

@@ -23,7 +23,7 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
 fi
 
 VARIANT=${1:-standard}
-VERSION="v2.1.1"
+VERSION="v2.2.0"
 
 # Validate variant
 if [ "$VARIANT" != "standard" ] && [ "$VARIANT" != "mom" ]; then

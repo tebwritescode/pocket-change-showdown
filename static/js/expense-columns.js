@@ -4,12 +4,21 @@
     const defaultColumns = {
         'date': { label: 'Date', visible: true, order: 1 },
         'title': { label: 'Title', visible: true, order: 2 },
-        'category': { label: 'Category', visible: true, order: 3 },
-        'payment': { label: 'Payment Method', visible: true, order: 4 },
-        'amount': { label: 'Amount', visible: true, order: 5 },
-        'reimbursable': { label: 'Reimbursable', visible: true, order: 6 },
-        'receipt': { label: 'Receipt', visible: true, order: 7 },
-        'actions': { label: 'Actions', visible: true, order: 8, fixed: true }
+        'description': { label: 'Description', visible: false, order: 3 },
+        'category': { label: 'Category', visible: true, order: 4 },
+        'payment': { label: 'Payment Method', visible: true, order: 5 },
+        'amount': { label: 'Amount', visible: true, order: 6 },
+        'location': { label: 'Location', visible: false, order: 7 },
+        'vendor': { label: 'Vendor', visible: false, order: 8 },
+        'notes': { label: 'Notes', visible: false, order: 9 },
+        'tags': { label: 'Tags', visible: false, order: 10 },
+        'reimbursable': { label: 'Reimbursable', visible: true, order: 11 },
+        'reimbursement_status': { label: 'Reimbursement Status', visible: false, order: 12 },
+        'reimbursement_notes': { label: 'Reimbursement Notes', visible: false, order: 13 },
+        'receipt': { label: 'Receipt', visible: true, order: 14 },
+        'created_at': { label: 'Created', visible: false, order: 15 },
+        'updated_at': { label: 'Updated', visible: false, order: 16 },
+        'actions': { label: 'Actions', visible: true, order: 17, fixed: true }
     };
 
     // Load saved preferences from localStorage
@@ -66,12 +75,21 @@
         const columnMap = {
             'date': 0,
             'title': 1,
-            'category': 2,
-            'payment': 3,
-            'amount': 4,
-            'reimbursable': 5,
-            'receipt': 6,
-            'actions': 7
+            'description': 2,
+            'category': 3,
+            'payment': 4,
+            'amount': 5,
+            'location': 6,
+            'vendor': 7,
+            'notes': 8,
+            'tags': 9,
+            'reimbursable': 10,
+            'reimbursement_status': 11,
+            'reimbursement_notes': 12,
+            'receipt': 13,
+            'created_at': 14,
+            'updated_at': 15,
+            'actions': 16
         };
         return columnMap[columnKey] !== undefined ? columnMap[columnKey] : -1;
     }
