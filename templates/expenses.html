@@ -159,6 +159,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/expense-columns.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Add search functionality if needed

@@ -11,7 +11,7 @@ from datetime import datetime
 import shutil
 
 # Current application version
-CURRENT_VERSION = "2.1.0"
+CURRENT_VERSION = "2.1.1"
 
 # Migration history - maps versions to their required migrations
 MIGRATION_HISTORY = {

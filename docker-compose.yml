@@ -8,7 +8,7 @@ services:
         - linux/amd64
         - linux/arm64
         - linux/arm/v7
-    image: tebwritescode/pocket-change-showdown:latest
+    image: tebwritescode/pcs-tracker:latest
     container_name: pcs-tracker
     ports:
       - "5001:5001"

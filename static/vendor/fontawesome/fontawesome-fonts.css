@@ -1,0 +1,47 @@
+/* FontAwesome 6.0.0 Font Face Declarations */
+/* This file defines the font faces for FontAwesome icons to work properly */
+
+@font-face {
+    font-family: 'Font Awesome 6 Free';
+    font-style: normal;
+    font-weight: 900;
+    font-display: block;
+    src: url('./webfonts/fa-solid-900.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Font Awesome 6 Free';
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url('./webfonts/fa-regular-400.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Font Awesome 6 Brands';
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url('./webfonts/fa-brands-400.woff2') format('woff2');
+}
+
+/* Ensure .fas uses solid weight */
+.fas,
+.fa-solid {
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+}
+
+/* Ensure .far uses regular weight */
+.far,
+.fa-regular {
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 400;
+}
+
+/* Ensure .fab uses brands font */
+.fab,
+.fa-brands {
+    font-family: 'Font Awesome 6 Brands';
+    font-weight: 400;
+}
